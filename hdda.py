@@ -116,7 +116,7 @@ class HDGMM():
         # If unsupervised case
         if y is None: # Initialisation of the class membership
             init = param['init']
-            EM,ITER,ITERMAX,TOL = True,0,100,0.0001
+            EM,ITER,ITERMAX,TOL = True,0,param['itermax'],param['tol']
             if init is 'kmeans':
                 y = KMeans(n_clusters=param['C'],n_init=20,n_jobs=-2,random_state=0).fit_predict(x)
                 y += 1 # Label starts at one
