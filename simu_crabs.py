@@ -17,7 +17,6 @@ pca = PCA(n_components=2)
 Xp = pca.fit_transform(X)
 plt.scatter(Xp[:,0],Xp[:,1],c=Y,s=40)
 plt.savefig('2D_true_labels.png')
-'2D_true_labels.png'
 
 BIC,POS = [],[]
 for model_ in MODEL:
@@ -32,7 +31,6 @@ for model_ in MODEL:
 plt.figure()
 plt.plot(BIC)
 plt.savefig("bic.png")
-"bic.png"
 
 t = sp.argmin(BIC)
 best_model = MODEL[t]
@@ -53,4 +51,4 @@ yp=clf.predict(X)
 
 plt.figure()
 plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
-plt.savefig("2D_gmm.png")
+plt.savefig('2D_gmm.png')

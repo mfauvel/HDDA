@@ -1,6 +1,7 @@
 #+TITLE: README for the HDDA python toolbox
 #+AUTHOR: Mathieu Fauvel
 #+EMAIL: mathieu.fauvel@ensat.fr
+#+EXCLUDE_TAGS: noexport
 
 * Objectives
 The package provides a python implementation of the High Dimensional
@@ -21,18 +22,15 @@ with Python 2.7.
 
 * Requirements
 [[http://www.scipy.org/][Scipy]] and [[http://scikit-learn.org/stable/][Scikit]] should be installed. Also, for a faster processing, a
-good linear algebra library is preferable. [[Openblas]] is a good option.
+good linear algebra library is preferable. [[http://openblas.net/][Openblas]] is a good option.
 
 * Usage
-:LOGBOOK:
-CLOCK: [2016-03-09 Wed 22:52]
-:END:
 We provide an introductory example taken from Charles Bouveyron
 thesis, on the /crabs/ data set. We also compare with the standard GMM
 with EM provided by scikit.
 
 First, load some packages and define some variables:
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :session hdda
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports both :session hdda
 import hdda
 import matplotlib.pyplot as plt
 import scipy as sp
@@ -47,31 +45,27 @@ th,p = sp.linspace(0.2,0.99,num=4),sp.arange(1,5,1)
 #+RESULTS:
 
 Load the data
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :session hdda
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
 data = sp.load('crabs.npz')
 X = data['x']
 Y = data['y']
 #+END_SRC
 
-#+RESULTS:
-
 For illustration, the projection on the two first PC axis is done
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
 plt.figure()
 pca = PCA(n_components=2)
 Xp = pca.fit_transform(X)
 plt.scatter(Xp[:,0],Xp[:,1],c=Y,s=40)
 plt.savefig('2D_true_labels.png')
-'2D_true_labels.png'
 #+END_SRC
 
-#+RESULTS:
 [[file:2D_true_labels.png]]
 
 Then we learn each model and store the optimal BIC value and its
 corresponding parameters
 
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
 BIC,POS = [],[]
 for model_ in MODEL:
     bic=[]
@@ -85,17 +79,15 @@ for model_ in MODEL:
 plt.figure()
 plt.plot(BIC)
 plt.savefig("bic.png")
-"bic.png"
 #+END_SRC
 
-#+RESULTS:
 [[file:bic.png]]
 
 From all the models, the one with the minimal BIC is selected. Then
 we learn (again! can be saved from the previous loop...) and we plot
 the results.
 
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
 t = sp.argmin(BIC)
 best_model = MODEL[t]
 param = {'th':th[POS[t]],'p':p[POS[t]],'C':4,'init':'random'}
@@ -108,19 +100,29 @@ print "With parameter " + str(th[POS[t]]) + " and " +str(p[POS[t]])
 plt.figure()
 plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
 plt.savefig("2D_hdda.png")
-"2D_hdda.png"
 #+END_SRC
 
-#+RESULTS:
 [[file:2D_hdda.png]]
 
 The same learning is done with the GMM from scikit, and we plot the results
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
 clf = mixture.GMM(n_components=4, covariance_type='full')
 clf.fit(X)
 yp=clf.predict(X)
 
 plt.figure()
 plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
-plt.savefig("2D_gmm.png")
+plt.savefig('2D_gmm.png')
 #+END_SRC
+
+[[file:2D_gmm.png]]
+
+The file produce the following output
+#+BEGIN_SRC sh :exports both
+python simu_crabs.py
+#+END_SRC
+
+#+RESULTS:
+| Best | model     |  M6 |     |   |
+| With | parameter | 0.2 | and | 1 |
+

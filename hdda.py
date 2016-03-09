@@ -28,6 +28,7 @@ def soft_cov(x,m,w):
 # TODO: Rajouter les quatres derniers modèles
 # TODO: Add the other submodels dans la fonction CV
 # TODO: Regarder une version "safe" pour le calcul des probabilités dans EM
+# TODO: Rajouter une fonction pour sélectionner le meilleur modèle pour un jeux de paramètres données
 #---------------------------------------------------------------------#
 
 ## HDDA Class
