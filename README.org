@@ -1,0 +1,126 @@
+#+TITLE: README for the HDDA python toolbox
+#+AUTHOR: Mathieu Fauvel
+#+EMAIL: mathieu.fauvel@ensat.fr
+
+* Objectives
+The package provides a python implementation of the High Dimensional
+Discriminant analysis/clustering models, see publications:
+- [[http://hal.archives-ouvertes.fr/hal-00394327]]
+- [[http://hal.archives-ouvertes.fr/hal-00022183/]]
+
+  
+The original =R= package available on the CRAN:
+[[http://cran.r-project.org/web/packages/HDclassif/index.html]]
+
+Some of the models are actually implemented, those who usually provide
+the best results in terms of classification accuracy.
+
+* Install
+Just download the package. It has been tested on linux, Debian Wheezy
+with Python 2.7.
+
+* Requirements
+[[http://www.scipy.org/][Scipy]] and [[http://scikit-learn.org/stable/][Scikit]] should be installed. Also, for a faster processing, a
+good linear algebra library is preferable. [[Openblas]] is a good option.
+
+* Usage
+:LOGBOOK:
+CLOCK: [2016-03-09 Wed 22:52]
+:END:
+We provide an introductory example taken from Charles Bouveyron
+thesis, on the /crabs/ data set. We also compare with the standard GMM
+with EM provided by scikit.
+
+First, load some packages and define some variables:
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :session hdda
+import hdda
+import matplotlib.pyplot as plt
+import scipy as sp
+from sklearn.decomposition import PCA
+from sklearn import mixture
+
+# Parameters for HDDA
+MODEL = ['M1','M2','M3','M4','M5','M6','M7','M8']
+th,p = sp.linspace(0.2,0.99,num=4),sp.arange(1,5,1)
+#+END_SRC
+
+#+RESULTS:
+
+Load the data
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :session hdda
+data = sp.load('crabs.npz')
+X = data['x']
+Y = data['y']
+#+END_SRC
+
+#+RESULTS:
+
+For illustration, the projection on the two first PC axis is done
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+plt.figure()
+pca = PCA(n_components=2)
+Xp = pca.fit_transform(X)
+plt.scatter(Xp[:,0],Xp[:,1],c=Y,s=40)
+plt.savefig('2D_true_labels.png')
+'2D_true_labels.png'
+#+END_SRC
+
+#+RESULTS:
+[[file:2D_true_labels.png]]
+
+Then we learn each model and store the optimal BIC value and its
+corresponding parameters
+
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+BIC,POS = [],[]
+for model_ in MODEL:
+    bic=[]
+    for th_,p_ in zip(th,p):
+        model = hdda.HDGMM(model=model_)
+        param = {'th':th_,'p':p_,'C':4,'init':'random'}
+        yp=model.fit(X,param=param)
+        bic.append(model.bic)
+    BIC.append(sp.amin(bic))
+    POS.append(sp.argmin(bic))
+plt.figure()
+plt.plot(BIC)
+plt.savefig("bic.png")
+"bic.png"
+#+END_SRC
+
+#+RESULTS:
+[[file:bic.png]]
+
+From all the models, the one with the minimal BIC is selected. Then
+we learn (again! can be saved from the previous loop...) and we plot
+the results.
+
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+t = sp.argmin(BIC)
+best_model = MODEL[t]
+param = {'th':th[POS[t]],'p':p[POS[t]],'C':4,'init':'random'}
+model=hdda.HDGMM(model=best_model)
+yp=model.fit(X,param=param)
+
+print "Best model "+best_model
+print "With parameter " + str(th[POS[t]]) + " and " +str(p[POS[t]])
+
+plt.figure()
+plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
+plt.savefig("2D_hdda.png")
+"2D_hdda.png"
+#+END_SRC
+
+#+RESULTS:
+[[file:2D_hdda.png]]
+
+The same learning is done with the GMM from scikit, and we plot the results
+#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code :results file :session hdda
+clf = mixture.GMM(n_components=4, covariance_type='full')
+clf.fit(X)
+yp=clf.predict(X)
+
+plt.figure()
+plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
+plt.savefig("2D_gmm.png")
+#+END_SRC
