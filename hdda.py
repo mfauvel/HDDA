@@ -11,7 +11,7 @@ eps = sp.finfo(sp.float64).eps
 ## Empirical estimators for EM
 def soft_cov(x,m,w):
     """
-    TBC
+    This function implements a soft estimation of the covariance function. It is used in the EM iterations
     """
     n,d=x.shape
     w_ = sp.copy(w).reshape(n,1)
@@ -28,13 +28,16 @@ def soft_cov(x,m,w):
 # TODO: Rajouter les quatres derniers modèles
 # TODO: Add the other submodels dans la fonction CV
 # TODO: Regarder une version "safe" pour le calcul des probabilités dans EM
+# TODO: Gérer le random state
 # TODO: Rajouter une fonction pour sélectionner le meilleur modèle pour un jeux de paramètres données
+# TODO: Inclure plusieurs init
+# TODO: Stocker le nombres d'iterations, et la valeur d'arrêt
 #---------------------------------------------------------------------#
 
 ## HDDA Class
 class HDGMM():
     """
-    This implements the HDDA models proposed by Charles Bouveyron and Stephane Girard
+    This class implements the HDDA models proposed by Charles Bouveyron and Stephane Girard
     Details about methods can be found here:
     http://w3.mi.parisdescartes.fr/~cbouveyr/
     """
@@ -109,7 +112,7 @@ class HDGMM():
         n,d = x.shape
 
         # Set defaults parameters
-        default_param={'th':0.9,'p':5,'init':'kmeans','itermax':100,'tol':0.0001,'C':4,'population':2}
+        default_param={'th':0.9,'p':5,'init':'kmeans','itermax':100,'tol':0.0001,'C':4,'population':2,'random_state':0}
         for key,value in default_param.iteritems():
             if not param.has_key(key):
                 param[key]=value
@@ -119,11 +122,18 @@ class HDGMM():
             init = param['init']
             EM,ITER,ITERMAX,TOL = True,0,param['itermax'],param['tol']
             if init is 'kmeans':
-                y = KMeans(n_clusters=param['C'],n_init=20,n_jobs=-2,random_state=0).fit_predict(x)
-                y += 1 # Label starts at one
+                y = KMeans(n_clusters=param['C'],n_init=20,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
+                # Check for minimal size of cluster
+                nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
+                if sp.any(nc<2):
+                    self.bic = sp.finfo(sp.float64).max
+                    return None
+                else:
+                    y += 1 # Label starts at one
             elif init is 'random':
+                sp.random.seed(param['random_state'])
                 y = sp.random.randint(1,high=param['C']+1,size=n)
-            
+                
         # Initialization of the parameter
         self.fit_init(x,y)
         self.fit_update(param)
@@ -142,16 +152,17 @@ class HDGMM():
                 self.fit_update(param)
 
                 # Check for empty classes
-                if sp.any(sp.asarray(self.ni)<param['population']):
-                    break
+                if sp.any(sp.asarray(self.ni)<param['population']): # If empty return infty bic
+                    self.bic = sp.finfo(sp.float64).max
+                    return None
                 
                 # Compute the BIC
                 BIC_n = self.BIC(x,T)
-                if (BIC_o-BIC_n)/BIC_o < TOL:
+                if abs((BIC_o-BIC_n)/BIC_o) < TOL:
                     break
                 else:
-                    BIC_o = BIC_n
                     ITER += 1
+                BIC_o = BIC_n
             # Return the class membership
             self.bic = BIC_n
             return sp.argmax(T,1)+1
