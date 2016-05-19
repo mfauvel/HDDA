@@ -6,7 +6,7 @@ from sklearn import mixture
 
 # Parameters for HDDA
 MODEL = ['M1','M2','M3','M4','M5','M6','M7','M8']
-th,p = sp.linspace(0.2,0.99,num=4),sp.arange(1,5,1)
+th,p = sp.linspace(0.2,0.95,num=4),sp.arange(1,5,1)
 
 data = sp.load('crabs.npz')
 X = data['x']
@@ -23,7 +23,7 @@ for model_ in MODEL:
     bic=[]
     for th_,p_ in zip(th,p):
         model = hdda.HDGMM(model=model_)
-        param = {'th':th_,'p':p_,'C':4,'init':'random'}
+        param = {'th':th_,'p':p_,'C':4,'init':'kmeans'}
         yp=model.fit(X,param=param)
         bic.append(model.bic)
     BIC.append(sp.amin(bic))
@@ -34,7 +34,7 @@ plt.savefig("bic.png")
 
 t = sp.argmin(BIC)
 best_model = MODEL[t]
-param = {'th':th[POS[t]],'p':p[POS[t]],'C':4,'init':'random'}
+param = {'th':th[POS[t]],'p':p[POS[t]],'C':4,'init':'kmeans'}
 model=hdda.HDGMM(model=best_model)
 yp=model.fit(X,param=param)
 
