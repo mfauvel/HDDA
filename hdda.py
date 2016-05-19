@@ -144,9 +144,9 @@ class HDGMM():
             while(ITER<ITERMAX):
                 # E step
                 T = sp.exp(-0.5*self.predict(x,out='ki'))
-                T[T<eps]=eps
                 T /= sp.sum(T,axis=1).reshape(n,1)
-
+                T[T<eps]=0
+                
                 # M step
                 self.free(full=True)
                 self.fit_init(x,T)
@@ -166,7 +166,7 @@ class HDGMM():
                     break
                 else:
                     ITER += 1
-                BIC_o = BIC_n
+                BIC_o = BIC_n # Update the bic
             # Return the class membership
             self.bic=BIC
             self.niter = ITER + 1
@@ -181,13 +181,13 @@ class HDGMM():
         :type out: string
         :return yp: The predicted labels and posterior probabilities if asked.
         """
-        nt = xt.shape[0]
+        nt,d = xt.shape
         C = len(self.a)
         K = sp.empty((nt,C))
         
         ## Start the prediction for each class
         for c in range(C):
-            cst = self.logdet[c] - 2*sp.log(self.prop[c])
+            cst = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
             xtc = xt-self.mean[c]
             temp = sp.dot(xtc,self.icov[c])
             K[:,c]=sp.sum(xtc*temp,axis=1)+cst
