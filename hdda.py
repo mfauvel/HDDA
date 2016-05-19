@@ -28,10 +28,8 @@ def soft_cov(x,m,w):
 # TODO: Rajouter les quatres derniers modèles
 # TODO: Add the other submodels dans la fonction CV
 # TODO: Regarder une version "safe" pour le calcul des probabilités dans EM
-# TODO: Gérer le random state
 # TODO: Rajouter une fonction pour sélectionner le meilleur modèle pour un jeux de paramètres données
 # TODO: Inclure plusieurs init
-# TODO: Stocker le nombres d'iterations, et la valeur d'arrêt
 #---------------------------------------------------------------------#
 
 ## HDDA Class
@@ -71,14 +69,15 @@ class HDGMM():
         self.icov =[]         # Pre-computation of the inverse of covariance matrices using HDDA models
         self.model=model      # Name of the model
         self.q = []           # Number of parameters of the full models
-        self.bic = []
+        self.bic = []         # bic values over the iterations
+        self.niter = None     # Number of iterations
 
-    def free(self,full=None):
+    def free(self,full=False):
         """This  function free some  parameters of the  model. It is  used to
         speed-up the cross validation process.
         
         :param full: To free only the parcimonious part or all the model
-        :type full: int
+        :type full: bool
         """
         self.pi=[]
         self.a = []
@@ -88,7 +87,7 @@ class HDGMM():
         self.q = []
         self.bic = []
         
-        if full is not None:
+        if full:
             self.ni = []          # Number of samples of each class
             self.prop = []        # Proportion of each class
             self.mean = []        # Mean vector
@@ -120,13 +119,15 @@ class HDGMM():
         # If unsupervised case
         if y is None: # Initialisation of the class membership
             init = param['init']
-            EM,ITER,ITERMAX,TOL = True,0,param['itermax'],param['tol']
+            EM,ITER,ITERMAX,TOL,BIC = True,0,param['itermax'],param['tol'],[]
             if init is 'kmeans':
                 y = KMeans(n_clusters=param['C'],n_init=20,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
                 # Check for minimal size of cluster
                 nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
                 if sp.any(nc<2):
-                    self.bic = sp.finfo(sp.float64).max
+                    BIC.append(sp.finfo(sp.float64).max)
+                    self.bic = BIC
+                    self.niter = ITER +1
                     return None
                 else:
                     y += 1 # Label starts at one
@@ -138,33 +139,37 @@ class HDGMM():
         self.fit_init(x,y)
         self.fit_update(param)
         BIC_o = self.BIC(x,y)
-
+        BIC.append(BIC_o)
         if EM is True: # Unsupervised case, needs iteration
             while(ITER<ITERMAX):
                 # E step
                 T = sp.exp(-0.5*self.predict(x,out='ki'))
+                T[T<eps]=eps
                 T /= sp.sum(T,axis=1).reshape(n,1)
-                T[T<eps]=0
 
                 # M step
-                self.free(full=1)
+                self.free(full=True)
                 self.fit_init(x,T)
                 self.fit_update(param)
 
                 # Check for empty classes
                 if sp.any(sp.asarray(self.ni)<param['population']): # If empty return infty bic
-                    self.bic = sp.finfo(sp.float64).max
+                    BIC.append(sp.finfo(sp.float64).max)
+                    self.bic=BIC
+                    self.niter = ITER +1
                     return None
                 
                 # Compute the BIC
                 BIC_n = self.BIC(x,T)
+                BIC.append(BIC_n)
                 if abs((BIC_o-BIC_n)/BIC_o) < TOL:
                     break
                 else:
                     ITER += 1
                 BIC_o = BIC_n
             # Return the class membership
-            self.bic = BIC_n
+            self.bic=BIC
+            self.niter = ITER + 1
             return sp.argmax(T,1)+1
                 
     def predict(self,xt,out=None):
@@ -186,7 +191,13 @@ class HDGMM():
             xtc = xt-self.mean[c]
             temp = sp.dot(xtc,self.icov[c])
             K[:,c]=sp.sum(xtc*temp,axis=1)+cst
-            
+
+        # Check for negative values
+        # Km = K.min()
+        # if Km < eps:
+        #     K -= Km
+        # del Km
+        
         ## Assign the label to the minimum value of K 
         if out is None:
             yp = sp.argmin(K,1)+1
