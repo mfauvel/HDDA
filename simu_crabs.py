@@ -25,7 +25,7 @@ for model_ in MODEL:
         model = hdda.HDGMM(model=model_)
         param = {'th':th_,'p':p_,'C':4,'init':'kmeans'}
         yp=model.fit(X,param=param)
-        bic.append(model.bic)
+        bic.append(model.bic[-1])
     BIC.append(sp.amin(bic))
     POS.append(sp.argmin(bic))
 plt.figure()
