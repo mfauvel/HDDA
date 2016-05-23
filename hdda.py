@@ -25,10 +25,9 @@ def soft_cov(x,m,w):
     return sp.dot(xc.T,xc*w_)/w_sum
 
 #----------------------------TODO-------------------------------------#
-# TODO: Rajouter les quatres derniers modèles
-# TODO: Add the other submodels dans la fonction CV
-# TODO: Regarder une version "safe" pour le calcul des probabilités dans EM
-# TODO: Rajouter une fonction pour sélectionner le meilleur modèle pour un jeux de paramètres données
+# TODO: Add the other submodels et mettre à jour dans la fonction CV
+# TODO: Rajouter une fonction pour sélectionner le meilleur modèle pour un jeux de paramètres données: faire une seul initialization pour tout les modlèles ...
+# TODO: Modifier 
 # TODO: Inclure plusieurs init
 #---------------------------------------------------------------------#
 
@@ -121,7 +120,7 @@ class HDGMM():
             init = param['init']
             EM,ITER,ITERMAX,TOL,BIC = True,0,param['itermax'],param['tol'],[]
             if init is 'kmeans':
-                y = KMeans(n_clusters=param['C'],n_init=20,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
+                y = KMeans(n_clusters=param['C'],n_init=10,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
                 # Check for minimal size of cluster
                 nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
                 if sp.any(nc<2):
@@ -142,22 +141,24 @@ class HDGMM():
         BIC.append(BIC_o)
         if EM is True: # Unsupervised case, needs iteration
             while(ITER<ITERMAX):
-                # E step
-                T = sp.exp(-0.5*self.predict(x,out='ki'))
-                T /= sp.sum(T,axis=1).reshape(n,1)
-                T[T<eps]=0
+                # 
+                K = self.predict(x,out='ki')
+                T = sp.empty_like(K)
+                for c in xrange(param['C']):
+                    T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)            
+
+                # Check for empty classes
+                if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
+                    BIC.append(sp.finfo(sp.float64).max)
+                    self.bic=BIC
+                    self.niter = ITER +1
+                    return None
                 
                 # M step
                 self.free(full=True)
                 self.fit_init(x,T)
                 self.fit_update(param)
 
-                # Check for empty classes
-                if sp.any(sp.asarray(self.ni)<param['population']): # If empty return infty bic
-                    BIC.append(sp.finfo(sp.float64).max)
-                    self.bic=BIC
-                    self.niter = ITER +1
-                    return None
                 
                 # Compute the BIC
                 BIC_n = self.BIC(x,T)
@@ -191,12 +192,6 @@ class HDGMM():
             xtc = xt-self.mean[c]
             temp = sp.dot(xtc,self.icov[c])
             K[:,c]=sp.sum(xtc*temp,axis=1)+cst
-
-        # Check for negative values
-        # Km = K.min()
-        # if Km < eps:
-        #     K -= Km
-        # del Km
         
         ## Assign the label to the minimum value of K 
         if out is None:
@@ -246,7 +241,7 @@ class HDGMM():
                 
             L,Q = linalg.eigh(cov) # Compute the spectral decomposition
             idx = L.argsort()[::-1]
-            L,Q=L[idx],Q[:,idx]
+            L,Q = L[idx],Q[:,idx]
             L[L<eps]=eps
             self.L.append(L)
             self.Q.append(Q)      
