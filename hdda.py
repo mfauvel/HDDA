@@ -24,12 +24,6 @@ def soft_cov(x,m,w):
     # Compute the soft covariance matrix using <X.T,X>
     return sp.dot(xc.T,xc*w_)/w_sum
 
-#----------------------------TODO-------------------------------------#
-# TODO: Add the other submodels et mettre à jour dans la fonction CV
-# TODO: Rajouter une fonction pour sélectionner le meilleur modèle pour un jeux de paramètres données: faire une seul initialization pour tout les modlèles ...
-# TODO: Modifier 
-# TODO: Inclure plusieurs init
-#---------------------------------------------------------------------#
 
 ## HDDA Class
 class HDGMM():
@@ -137,15 +131,15 @@ class HDGMM():
         # Initialization of the parameter
         self.fit_init(x,y)
         self.fit_update(param)
-        BIC_o = self.BIC(x,y)
+        BIC_o = self.BIC(x)
         BIC.append(BIC_o)
         if EM is True: # Unsupervised case, needs iteration
             while(ITER<ITERMAX):
-                # 
+                # Compute posterior safely
                 K = self.predict(x,out='ki')
                 T = sp.empty_like(K)
                 for c in xrange(param['C']):
-                    T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)            
+                    T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
 
                 # Check for empty classes
                 if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
@@ -161,7 +155,7 @@ class HDGMM():
 
                 
                 # Compute the BIC
-                BIC_n = self.BIC(x,T)
+                BIC_n = self.BIC(x)
                 BIC.append(BIC_n)
                 if abs((BIC_o-BIC_n)/BIC_o) < TOL:
                     break
@@ -369,21 +363,16 @@ class HDGMM():
         ind = sp.argmax(Kappa)
         return param_grid[ind],Kappa[ind]
 
-    def BIC(self,x,T):
+    def BIC(self,x):
         """
         Compute the BIC given a set of samples and its membership.
         :param x: The sample matrix, is of size x \times d where n is the number of samples and d is the number of variables
         :param T: the membership matrix
         """
-        N = sum(self.ni)
-        K = self.predict(x,out='ki')
-        if T.ndim == 1:
-            C = int(T.max())
-            S =  sp.zeros((T.size,C))
-            for i in range(1,C+1):
-                t=sp.where(T==i)[0]
-                S[t,i-1]=1
-            LL = K*S
-        else:
-            LL = K*T    
-        return (LL.sum() + self.q*sp.log(N))/N
+        n = sum(self.ni)
+        
+        K = -0.5*self.predict(x,out='ki')
+        Km = K.max(axis=1).reshape(n,1)
+        L = sp.log(sp.exp(K-Km).sum(axis=1)) + Km
+        
+        return (-2*L.sum() + self.q*sp.log(n))/n
