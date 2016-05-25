@@ -384,5 +384,3 @@ class HDGMM():
         LL = (sp.log(sp.exp(K-Km).sum(axis=1))+Km).sum()
 
         return LL,T
-            
-
