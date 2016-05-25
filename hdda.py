@@ -7,7 +7,7 @@ import accuracy_index as ai
 
 ## Numerical precision
 eps = sp.finfo(sp.float64).eps
-
+MAX = sp.finfo(sp.float64).max
 ## Empirical estimators for EM
 def soft_cov(x,m,w):
     """
@@ -104,7 +104,7 @@ class HDGMM():
         n,d = x.shape
 
         # Set defaults parameters
-        default_param={'th':0.9,'p':5,'init':'kmeans','itermax':100,'tol':0.0001,'C':4,'population':2,'random_state':0}
+        default_param={'th':0.9,'p':5,'init':'kmeans','itermax':100,'tol':0.00000001,'C':4,'population':2,'random_state':0}
         for key,value in default_param.iteritems():
             if not param.has_key(key):
                 param[key]=value
@@ -112,15 +112,15 @@ class HDGMM():
         # If unsupervised case
         if y is None: # Initialisation of the class membership
             init = param['init']
-            EM,ITER,ITERMAX,TOL,BIC = True,0,param['itermax'],param['tol'],[]
+            EM,ITER,ITERMAX,TOL,LL = True,0,param['itermax'],param['tol'],[]
             if init is 'kmeans':
                 y = KMeans(n_clusters=param['C'],n_init=10,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
                 # Check for minimal size of cluster
                 nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
                 if sp.any(nc<2):
-                    BIC.append(sp.finfo(sp.float64).max)
-                    self.bic = BIC
-                    self.niter = ITER +1
+                    self.LL = LL
+                    self.bic = MAX
+                    self.niter = ITER
                     return None
                 else:
                     y += 1 # Label starts at one
@@ -131,20 +131,17 @@ class HDGMM():
         # Initialization of the parameter
         self.fit_init(x,y)
         self.fit_update(param)
-        BIC_o = self.BIC(x)
-        BIC.append(BIC_o)
+        ll,T = self.loglike(x)
+        LL.append(ll)
         if EM is True: # Unsupervised case, needs iteration
             while(ITER<ITERMAX):
-                # Compute posterior safely
-                K = self.predict(x,out='ki')
-                T = sp.empty_like(K)
-                for c in xrange(param['C']):
-                    T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
+                # E step
+                # Use the precomputed T  nothing change since then the computation of the BIC
 
                 # Check for empty classes
                 if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
-                    BIC.append(sp.finfo(sp.float64).max)
-                    self.bic=BIC
+                    self.LL = LL                    
+                    self.bic= MAX
                     self.niter = ITER +1
                     return None
                 
@@ -153,17 +150,17 @@ class HDGMM():
                 self.fit_init(x,T)
                 self.fit_update(param)
 
-                
-                # Compute the BIC
-                BIC_n = self.BIC(x)
-                BIC.append(BIC_n)
-                if abs((BIC_o-BIC_n)/BIC_o) < TOL:
+                # Compute the BIC and do the E step
+                ll,T=self.loglike(x)
+                LL.append(ll)
+                if abs((LL[-1]-LL[-2])/LL[-2]) <TOL:
                     break
                 else:
                     ITER += 1
-                BIC_o = BIC_n # Update the bic
-            # Return the class membership
-            self.bic=BIC
+
+            # Return the class membership and some parameters of the optimization
+            self.LL = LL
+            self.bic = -2*LL[-1]+ self.q*sp.log(n)
             self.niter = ITER + 1
             return sp.argmax(T,1)+1
                 
@@ -363,16 +360,29 @@ class HDGMM():
         ind = sp.argmax(Kappa)
         return param_grid[ind],Kappa[ind]
 
-    def BIC(self,x):
+    def loglike(self,x):
         """
-        Compute the BIC given a set of samples and its membership.
+        Compute the log likelyhood given a set of samples.
         :param x: The sample matrix, is of size x \times d where n is the number of samples and d is the number of variables
-        :param T: the membership matrix
         """
-        n = sum(self.ni)
-        
-        K = -0.5*self.predict(x,out='ki')
+        ## Get some parameters
+        n = x.shape[0]
+        C = len(self.ni)
+
+        ## Compute the membership function
+        K = self.predict(x,out='ki')
+
+        ## Compute posterio probability
+        T = sp.empty_like(K)
+        for c in xrange(C):
+            T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
+
+        ## Compute the Loglikelhood
+        K *= -0.5
+        K *= T
         Km = K.max(axis=1).reshape(n,1)
-        L = sp.log(sp.exp(K-Km).sum(axis=1)) + Km
-        
-        return (-2*L.sum() + self.q*sp.log(n))/n
+        LL = (sp.log(sp.exp(K-Km).sum(axis=1))+Km).sum()
+
+        return LL,T
+            
+
