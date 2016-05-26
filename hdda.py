@@ -78,8 +78,7 @@ class HDGMM():
         self.logdet = []
         self.icov =[]
         self.q = []
-        self.bic = []
-        
+               
         if full:
             self.ni = []          # Number of samples of each class
             self.prop = []        # Proportion of each class
@@ -131,18 +130,18 @@ class HDGMM():
         # Initialization of the parameter
         self.fit_init(x,y)
         self.fit_update(param)
-        ll,T = self.loglike(x)
+        ll,K = self.loglike(x)
         LL.append(ll)
         if EM is True: # Unsupervised case, needs iteration
             while(ITER<ITERMAX):
-                # E step
-                # Use the precomputed T  nothing change since then the computation of the BIC
-
+                # E step - Use the precomputed K
+                T = sp.empty_like(K)
+                for c in xrange(param['C']):
+                    T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
+                    
                 # Check for empty classes
                 if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
-                    self.LL = LL                    
-                    self.bic= MAX
-                    self.niter = ITER +1
+                    self.LL,self.bic,self.niter = LL, MAX, (ITER+1)
                     return None
                 
                 # M step
@@ -151,7 +150,7 @@ class HDGMM():
                 self.fit_update(param)
 
                 # Compute the BIC and do the E step
-                ll,T=self.loglike(x)
+                ll,K=self.loglike(x)
                 LL.append(ll)
                 if abs((LL[-1]-LL[-2])/LL[-2]) <TOL:
                     break
@@ -178,7 +177,7 @@ class HDGMM():
         K = sp.empty((nt,C))
         
         ## Start the prediction for each class
-        for c in range(C):
+        for c in xrange(C):
             cst = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
             xtc = xt-self.mean[c]
             temp = sp.dot(xtc,self.icov[c])
@@ -189,7 +188,7 @@ class HDGMM():
             yp = sp.argmin(K,1)+1
             return yp
         elif out is 'proba':
-            for c in range(C):
+            for c in xrange(C):
                 K[:,c] += 2*sp.log(self.prop[c])
             K *= -0.5
             return yp,K
@@ -367,20 +366,13 @@ class HDGMM():
         """
         ## Get some parameters
         n = x.shape[0]
-        C = len(self.ni)
 
         ## Compute the membership function
         K = self.predict(x,out='ki')
 
-        ## Compute posterio probability
-        T = sp.empty_like(K)
-        for c in xrange(C):
-            T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
-
         ## Compute the Loglikelhood
         K *= -0.5
-        K *= T
         Km = K.max(axis=1).reshape(n,1)
         LL = (sp.log(sp.exp(K-Km).sum(axis=1))+Km).sum()
-
-        return LL,T
+        K *= -2
+        return LL,K
