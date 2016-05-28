@@ -53,6 +53,7 @@ class HDGMM():
         self.ni = []          # Number of samples of each class
         self.prop = []        # Proportion of each class
         self.mean = []        # Mean vector
+        self.cov = []         # Covariance matrix
         self.pi=[]            # Signal subspace size
         self.L = []           # Eigenvalues of covariance matrices
         self.Q = []           # Eigenvectors of covariance matrices
@@ -83,6 +84,7 @@ class HDGMM():
             self.ni = []          # Number of samples of each class
             self.prop = []        # Proportion of each class
             self.mean = []        # Mean vector
+            self.cov = []         # Covariance matrix
             self.pi=[]            # Signal subspace size
             self.L = []           # Eigenvalues of covariance matrices
             self.Q = [] 
@@ -103,7 +105,7 @@ class HDGMM():
         n,d = x.shape
 
         # Set defaults parameters
-        default_param={'th':0.9,'p':5,'init':'kmeans','itermax':100,'tol':0.00000001,'C':4,'population':2,'random_state':0}
+        default_param={'th':0.9,'init':'kmeans','itermax':100,'tol':0.001,'C':4,'population':2,'random_state':0}
         for key,value in default_param.iteritems():
             if not param.has_key(key):
                 param[key]=value
@@ -214,7 +216,10 @@ class HDGMM():
         if n != y.shape[0]:
             print("size of x and y should match")
             exit()
-
+            
+        ## Compute the whole covariance matrix
+        self.W = sp.cov(x,rowvar=0)
+        
         ## Learn the empirical of the model for each class
         for c in xrange(C):
             if y.ndim == 1: # Supervised case
@@ -229,10 +234,11 @@ class HDGMM():
                 self.mean.append(sp.average(x,weights=y[:,c],axis=0))
                 cov = soft_cov(x,self.mean[c],y[:,c])
                 
+            self.cov.append(cov)
             L,Q = linalg.eigh(cov) # Compute the spectral decomposition
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
-            L[L<eps]=eps
+            L[L<eps]=eps # Chek for numerical errors
             self.L.append(L)
             self.Q.append(Q)      
 
@@ -243,20 +249,35 @@ class HDGMM():
         C = len(self.ni)
         d = self.mean[0].size
 
-        # Get parameters 
-        if self.model in ('M1','M3','M5','M7'): 
-            th = param['th']
-        elif self.model in ('M2','M4','M6','M8'):
-            p = param['p']
-        
+        # Get parameters
+        th = param['th']
+
+        # For common size subspace models
+        if self.model in ('M2','M4','M6','M8'):
+            # Compute intrinsic dimension on the whole data set
+            L = linalg.eigh(self.W,eigvals_only=True)
+            idx = L.argsort()[::-1]
+            L = L[idx]
+            L[L<eps]=eps # Chek for numerical errors
+            dL,p = sp.absolute(sp.diff(L)),0
+            dL /= dL.max()
+            while sp.any(dL[p:]>th):
+                p += 1
+            p += 1
+            
         for c in xrange(C):
             # Estimation of the signal subspace
             if self.model in ('M1','M3','M5','M7'):
-                pi = sp.where(sp.cumsum(self.L[c])/sp.sum(self.L[c])>th)[0][0]+1   
+                # Scree test
+                dL,pi = sp.absolute(sp.diff(self.L[c])),0
+                dL /= dL.max()
+                while sp.any(dL[pi:]>th):
+                    pi += 1
+                pi += 1
+                
             elif self.model in ('M2','M4','M6','M8'):
                 pi = p
-            if pi >= d: # Check for consistency of size: it should be at most "d-1"
-                pi = d-1
+
             self.pi.append(pi)
             
         if self.model in ('M1','M2','M5','M6'): # Noise free
