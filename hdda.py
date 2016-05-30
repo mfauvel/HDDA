@@ -57,6 +57,7 @@ class HDGMM():
         self.pi=[]            # Signal subspace size
         self.L = []           # Eigenvalues of covariance matrices
         self.Q = []           # Eigenvectors of covariance matrices
+        self.trace = []       # Trace of the covariance matrices
         self.a = []           # Eigenvalues of signal subspaces
         self.b = []           # Values of the noise
         self.logdet = []      # Pre-computation of the logdet of covariance matrices using HDDA models
@@ -87,7 +88,8 @@ class HDGMM():
             self.cov = []         # Covariance matrix
             self.pi=[]            # Signal subspace size
             self.L = []           # Eigenvalues of covariance matrices
-            self.Q = [] 
+            self.Q = []
+            self.trace = []
         
     def fit(self,x,y=None,param=None):
         """
@@ -207,7 +209,7 @@ class HDGMM():
         :type y: int
         """
         ## Get information from the data
-        n = x.shape[0]  # Number of samples
+        n,d = x.shape    # Number of samples and number of variables
         if y.ndim == 1:  # Number of classes
             C = int(y.max(0))   
         else:
@@ -235,12 +237,16 @@ class HDGMM():
                 cov = soft_cov(x,self.mean[c],y[:,c])
                 
             self.cov.append(cov)
-            L,Q = linalg.eigh(cov) # Compute the spectral decomposition
+            if int(self.ni[c]>=d): # Check if the covariance matrix is full rank
+                L,Q = linalg.eigh(cov)
+            else: # If not, compute only the ni first eigenvalues/eigenvectors
+                L,Q = linalg.eigh(cov,eigvals=(d-int(self.ni[c]),d-1)) 
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
             L[L<eps]=eps # Chek for numerical errors
             self.L.append(L)
-            self.Q.append(Q)      
+            self.Q.append(Q)
+            self.trace.append(cov.trace())
 
     def fit_update(self,param):
         """
@@ -255,7 +261,10 @@ class HDGMM():
         # For common size subspace models
         if self.model in ('M2','M4','M6','M8'):
             # Compute intrinsic dimension on the whole data set
-            L = linalg.eigh(self.W,eigvals_only=True)
+            if int(min(self.ni)>=d):  # Check if the covariance matrix of the class with the smallest size is full rank
+                L = linalg.eigh(self.W,eigvals_only=True)
+            else:
+                L = linalg.eigh(self.W,eigvals_only=True,eigvals=(d-int(min(self.ni)),d-1))
             idx = L.argsort()[::-1]
             L = L[idx]
             L[L<eps]=eps # Chek for numerical errors
@@ -263,7 +272,7 @@ class HDGMM():
             dL /= dL.max()
             while sp.any(dL[p:]>th):
                 p += 1
-            p += 1
+            p += 1 # To take into account python broadcasting a[:p] = a[0]...a[p-1]
             
         for c in xrange(C):
             # Estimation of the signal subspace
@@ -278,9 +287,6 @@ class HDGMM():
             elif self.model in ('M2','M4','M6','M8'):
                 pi = p
 
-            if pi >= d: # Check for full model
-                pi = d-1
-
             self.pi.append(pi)
             
         if self.model in ('M1','M2','M5','M6'): # Noise free
@@ -290,7 +296,7 @@ class HDGMM():
                 if self.model in ('M5','M6'):
                     self.a[c][:] = self.a[c][:].mean()
                  # Estim noise part
-                self.b.append((self.L[c].sum()-self.a[c].sum())/(d-self.pi[c]))
+                self.b.append((self.trace[c]-self.a[c].sum())/(d-self.pi[c]))
                 # Check for very small value of b
                 if self.b[c]<eps: 
                     self.b[c]=eps
@@ -304,8 +310,9 @@ class HDGMM():
         elif self.model in ('M3','M4','M7','M8'):# Noise common
             # Estimation of b
             denom = d - sum(map(lambda prop,pi:prop*pi,self.prop,self.pi))
-            num = sum(map(lambda prop,pi,L:prop*L[pi:].sum(),self.prop,self.pi,self.L))
-            # Check for very small value of b
+            num = sum(map(lambda prop,pi,L,trace:prop*(trace-L[:pi].sum()),self.prop,self.pi,self.L,self.trace))
+
+            # Check for very small values of b
             if num<eps:
                 self.b = eps
             elif denom<eps:
