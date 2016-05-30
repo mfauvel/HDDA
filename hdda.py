@@ -121,9 +121,7 @@ class HDGMM():
                 # Check for minimal size of cluster
                 nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
                 if sp.any(nc<2):
-                    self.LL = LL
-                    self.bic = MAX
-                    self.niter = ITER
+                    self.LL,self.bic,self.icl,self.niter = LL, MAX, MAX, (ITER+1)
                     return None
                 else:
                     y += 1 # Label starts at one
@@ -145,7 +143,7 @@ class HDGMM():
                     
                 # Check for empty classes
                 if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
-                    self.LL,self.bic,self.niter = LL, MAX, (ITER+1)
+                    self.LL,self.bic,self.icl,self.niter = LL, MAX, MAX, (ITER+1)
                     return None
                 
                 # M step
@@ -161,11 +159,18 @@ class HDGMM():
                 else:
                     ITER += 1
 
+            # Compute the membership
+            T = sp.empty_like(K)
+            for c in xrange(param['C']):
+                T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
+            
             # Return the class membership and some parameters of the optimization
             self.LL = LL
             self.bic = -2*LL[-1]+ self.q*sp.log(n)
+            self.icl = self.bic + 2*(T*sp.log(T+eps)).sum()
             self.niter = ITER + 1
-            return sp.argmax(T,1)+1
+           
+            return sp.argmax(T)+1 
                 
     def predict(self,xt,out=None):
         """
@@ -286,7 +291,9 @@ class HDGMM():
                 
             elif self.model in ('M2','M4','M6','M8'):
                 pi = p
-
+            if pi >= d:
+                pi -= 1
+                
             self.pi.append(pi)
             
         if self.model in ('M1','M2','M5','M6'): # Noise free
@@ -402,7 +409,7 @@ class HDGMM():
         K = self.predict(x,out='ki')
 
         ## Compute the Loglikelhood
-        K *= -0.5
+        K *= (-0.5)
         Km = K.max(axis=1).reshape(n,1)
         LL = (sp.log(sp.exp(K-Km).sum(axis=1))+Km).sum()
         K *= -2
