@@ -278,6 +278,9 @@ class HDGMM():
             elif self.model in ('M2','M4','M6','M8'):
                 pi = p
 
+            if pi >= d: # Check for full model
+                pi = d-1
+
             self.pi.append(pi)
             
         if self.model in ('M1','M2','M5','M6'): # Noise free
