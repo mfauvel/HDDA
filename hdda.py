@@ -9,21 +9,17 @@ import accuracy_index as ai
 eps = sp.finfo(sp.float64).eps
 MAX = sp.finfo(sp.float64).max
 ## Empirical estimators for EM
-def soft_cov(x,m,w):
+def soft_cov(x,m,ti,ni):
     """
     This function implements a soft estimation of the covariance function. It is used in the EM iterations
     """
     n,d=x.shape
-    w_ = sp.copy(w).reshape(n,1)
+    ti_ = sp.copy(ti).reshape(n,1)
     # Center the data
     xc = x-m
-    # Compute the normalization and check for small values
-    w_sum=w.sum()
-    if w_sum < eps:
-        w_sum = eps
-    # Compute the soft covariance matrix using <X.T,X>
-    return sp.dot(xc.T,xc*w_)/w_sum
 
+    # Compute the soft covariance matrix using <X.T,X>
+    return sp.dot(xc.T,xc*ti_)/(ni-1)
 
 ## HDDA Class
 class HDGMM():
@@ -239,7 +235,7 @@ class HDGMM():
                 self.ni.append(y[:,c].sum())
                 self.prop.append(float(self.ni[c])/n)
                 self.mean.append(sp.average(x,weights=y[:,c],axis=0))
-                cov = soft_cov(x,self.mean[c],y[:,c])
+                cov = soft_cov(x,self.mean[c],y[:,c],self.ni[c])
                 
             self.cov.append(cov)
             if int(self.ni[c]>=d): # Check if the covariance matrix is full rank
