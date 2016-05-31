@@ -28,7 +28,7 @@ class HDGMM():
     Details about methods can be found here:
     http://w3.mi.parisdescartes.fr/~cbouveyr/
     """
-    def __init__(self,model='M1'): 
+    def __init__(self,model='M1'):
         """
         This function initialize the HDDA stucture
         :param model: the model used.
@@ -57,7 +57,6 @@ class HDGMM():
         self.a = []           # Eigenvalues of signal subspaces
         self.b = []           # Values of the noise
         self.logdet = []      # Pre-computation of the logdet of covariance matrices using HDDA models
-        self.icov =[]         # Pre-computation of the inverse of covariance matrices using HDDA models
         self.model=model      # Name of the model
         self.q = []           # Number of parameters of the full models
         self.bic = []         # bic values over the iterations
@@ -74,7 +73,6 @@ class HDGMM():
         self.a = []
         self.b = []
         self.logdet = []
-        self.icov =[]
         self.q = []
                
         if full:
@@ -183,10 +181,15 @@ class HDGMM():
         
         ## Start the prediction for each class
         for c in xrange(C):
+            # Compute the constant term
             cst = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
+            # Remove the mean
             xtc = xt-self.mean[c]
-            temp = sp.dot(xtc,self.icov[c])
-            K[:,c]=sp.sum(xtc*temp,axis=1)+cst
+            # Do the projection
+            P = sp.dot(self.Q[c],self.Q[c].T)
+            Px = sp.dot(xtc,P)
+            temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c]))
+            K[:,c] = sp.sum(temp**2,axis=1) + sp.sum((xtc - Px)**2,axis=1)/self.b[c] + cst
         
         ## Assign the label to the minimum value of K 
         if out is None:
@@ -305,10 +308,8 @@ class HDGMM():
                     self.b[c]=eps
                 # Compute logdet
                 self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b[c])) 
-                # Compute the inverse of the covariances matrix
-                temp = self.Q[c][:,:self.pi[c]]*(1/self.a[c]-1/self.b[c]).reshape(self.pi[c])
-                self.icov.append(sp.dot(temp,self.Q[c][:,:self.pi[c]].T)+sp.eye(d)/self.b[c])
-                temp = []
+                # Update the Q matrices
+                self.Q[c] = self.Q[c][:,:self.pi[c]]
                 
         elif self.model in ('M3','M4','M7','M8'):# Noise common
             # Estimation of b
@@ -317,11 +318,11 @@ class HDGMM():
 
             # Check for very small values of b
             if num<eps:
-                self.b = eps
+                self.b = [eps for i in xrange(C)] 
             elif denom<eps:
-                self.b = 1.0/eps
+                self.b = [1/eps for i in xrange(C)] 
             else:
-                self.b = num/denom               
+                self.b = [num/denom for i in xrange(C)]               
             
             for c in xrange(C):
                 # Estim signal part
@@ -329,11 +330,9 @@ class HDGMM():
                 if self.model in ('M7','M8'):
                     self.a[c][:] = self.a[c][:].mean()
                 # Compute logdet
-                self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b)) 
-                # Compute the inverse of the covariances matrix
-                temp = self.Q[c][:,:self.pi[c]]*(1/self.a[c]-1/self.b).reshape(self.pi[c]) 
-                self.icov.append(sp.dot(temp,self.Q[c][:,:self.pi[c]].T)+sp.eye(d)/self.b)
-                temp = []
+                self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b[c])) 
+                # Update the Q matrices
+                self.Q[c] = self.Q[c][:,:self.pi[c]]
                 
         # Compute the number of parameters of the model
         self.q = C*d + (C-1) + sum(map(lambda p:p*(d-(p+1)/2),self.pi)) # Mean vectors + proportion + eigenvectors
