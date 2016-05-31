@@ -7,7 +7,7 @@ import accuracy_index as ai
 
 ## Numerical precision
 EPS = sp.finfo(sp.float64).eps
-MAX = sp.finfo(sp.float64).max
+MIN = sp.finfo(sp.float64).min
 
 ## HDDA Class
 class HDGMM():
@@ -99,11 +99,11 @@ class HDGMM():
             init = param['init']
             EM,ITER,ITERMAX,TOL,LL = True,0,param['itermax'],param['tol'],[]
             if init is 'kmeans':
-                y = KMeans(n_clusters=param['C'],n_init=10,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
+                y = KMeans(n_clusters=param['C'],n_init=5,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
                 # Check for minimal size of cluster
                 nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
                 if sp.any(nc<2):
-                    self.LL,self.bic,self.icl,self.niter = LL, MAX, MAX, (ITER+1)
+                    self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
                     return None
                 else:
                     y += 1 # Label starts at one
@@ -114,9 +114,10 @@ class HDGMM():
         # Initialization of the parameter
         self.fit_init(x,y)
         self.fit_update(param)
-        ll,K = self.loglike(x)
-        LL.append(ll)
+
         if EM is True: # Unsupervised case, needs iteration
+            ll,K = self.loglike(x)
+            LL.append(ll)
             while(ITER<ITERMAX):
                 # E step - Use the precomputed K
                 T = sp.empty_like(K)
@@ -125,7 +126,7 @@ class HDGMM():
                     
                 # Check for empty classes
                 if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
-                    self.LL,self.bic,self.icl,self.niter = LL, MAX, MAX, (ITER+1)
+                    self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
                     return None
                 
                 # M step
@@ -148,49 +149,12 @@ class HDGMM():
             
             # Return the class membership and some parameters of the optimization
             self.LL = LL
-            self.bic = -2*LL[-1]+ self.q*sp.log(n)
+            self.bic = 2*LL[-1] - self.q*sp.log(n)
             self.icl = self.bic + 2*(T*sp.log(T+EPS)).sum()
             self.niter = ITER + 1
            
             return sp.argmax(T)+1 
                 
-    def predict(self,xt,out=None):
-        """
-        This function compute the decision of the fitted HD model.
-        :param xt: The samples matrix of testing samples
-        :param out: Setting to a value different from None will let the function returns the posterior probability for each class.
-        :type xt: float
-        :type out: string
-        :return yp: The predicted labels and posterior probabilities if asked.
-        """
-        nt,d = xt.shape
-        C = len(self.a)
-        K = sp.empty((nt,C))
-        
-        ## Start the prediction for each class
-        for c in xrange(C):
-            # Compute the constant term
-            cst = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
-            # Remove the mean
-            xtc = xt-self.mean[c]
-            # Do the projection
-            P = sp.dot(self.Q[c],self.Q[c].T)
-            Px = sp.dot(xtc,P)
-            temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c]))
-            K[:,c] = sp.sum(temp**2,axis=1) + sp.sum((xtc - Px)**2,axis=1)/self.b[c] + cst
-        
-        ## Assign the label to the minimum value of K 
-        if out is None:
-            yp = sp.argmin(K,1)+1
-            return yp
-        elif out is 'proba':
-            for c in xrange(C):
-                K[:,c] += 2*sp.log(self.prop[c])
-            K *= -0.5
-            return yp,K
-        elif out is 'ki':
-            return K        
-
     def fit_init(self,x,y):
         """This  function computes  the  empirical  estimators of  the  mean
         vector,  the convariance  matrix  and the  proportion of  each
@@ -217,6 +181,7 @@ class HDGMM():
             self.W = sp.dot(X.T,X)
         else:
             self.W = sp.dot(X,X.T)
+        X = None
         
         ## Learn the empirical of the model for each class
         for c in xrange(C):
@@ -240,12 +205,13 @@ class HDGMM():
             L,Q = linalg.eigh(cov)
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
-            L[L<EPS]=EPS # Chek for numerical errors
+            # L[L<EPS]=EPS # Chek for numerical errors
             self.L.append(L)
             self.Q.append(Q)
             self.trace.append(cov.trace())
-
+            
     def fit_update(self,param):
+         
         """
         This function compute the parcimonious HDDA model from the empirical estimates obtained with fit_init
         """
@@ -263,21 +229,19 @@ class HDGMM():
             idx = L.argsort()[::-1]
             L = L[idx]
             L[L<EPS]=EPS # Chek for numerical errors
-            dL,p = sp.absolute(sp.diff(L)),0
+            dL,p = sp.absolute(sp.diff(L)),1 # To take into account python broadcasting a[:p] = a[0]...a[p-1]
             dL /= dL.max()
             while sp.any(dL[p:]>th):
                 p += 1
-            p += 1 # To take into account python broadcasting a[:p] = a[0]...a[p-1]
             
         for c in xrange(C):
             # Estimation of the signal subspace
             if self.model in ('M1','M3','M5','M7'):
                 # Scree test
-                dL,pi = sp.absolute(sp.diff(self.L[c])),0
+                dL,pi = sp.absolute(sp.diff(self.L[c])),1
                 dL /= dL.max()
                 while sp.any(dL[pi:]>th):
                     pi += 1
-                pi += 1
                 
             elif self.model in ('M2','M4','M6','M8'):
                 pi = p
@@ -343,6 +307,42 @@ class HDGMM():
         elif self.model in ('M7','M8'):
             self.q += C+1               
         
+    def predict(self,xt,out=None):
+        """
+        This function compute the decision of the fitted HD model.
+        :param xt: The samples matrix of testing samples
+        :param out: Setting to a value different from None will let the function returns the posterior probability for each class.
+        :type xt: float
+        :type out: string
+        :return yp: The predicted labels and posterior probabilities if asked.
+        """
+        nt,d = xt.shape
+        C = len(self.a)
+        K = sp.empty((nt,C))
+        
+        ## Start the prediction for each class
+        for c in xrange(C):
+            # Compute the constant term
+            cst = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
+            # Remove the mean
+            xtc = xt-self.mean[c]
+            # Do the projection
+            Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T))
+            temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c]))
+            K[:,c] = sp.sum(temp**2,axis=1) + sp.sum((xtc - Px)**2,axis=1)/self.b[c] + cst
+            
+        ## Assign the label to the minimum value of K 
+        if out is None:
+            yp = sp.argmin(K,1)+1
+            return yp
+        elif out is 'proba':
+            for c in xrange(C):
+                K[:,c] += 2*sp.log(self.prop[c])
+            K *= -0.5
+            return yp,K
+        elif out is 'ki':
+            return K        
+
     def CV(self,x,y,param,v=5,seed=0):
         """
         This function computes the cross validation estimate of the Kappa coefficient of agreement given a set of parameters in the supervised case. 
