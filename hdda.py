@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 import accuracy_index as ai
 
 ## Numerical precision
-eps = sp.finfo(sp.float64).eps
+EPS = sp.finfo(sp.float64).eps
 MAX = sp.finfo(sp.float64).max
 
 ## Empirical estimators for EM
@@ -162,7 +162,7 @@ class HDGMM():
             # Return the class membership and some parameters of the optimization
             self.LL = LL
             self.bic = -2*LL[-1]+ self.q*sp.log(n)
-            self.icl = self.bic + 2*(T*sp.log(T+eps)).sum()
+            self.icl = self.bic + 2*(T*sp.log(T+EPS)).sum()
             self.niter = ITER + 1
            
             return sp.argmax(T)+1 
@@ -248,7 +248,7 @@ class HDGMM():
                 L,Q = linalg.eigh(cov,eigvals=(d-int(self.ni[c]),d-1)) 
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
-            L[L<eps]=eps # Chek for numerical errors
+            L[L<EPS]=EPS # Chek for numerical errors
             self.L.append(L)
             self.Q.append(Q)
             self.trace.append(cov.trace())
@@ -272,7 +272,7 @@ class HDGMM():
                 L = linalg.eigh(self.W,eigvals_only=True,eigvals=(d-int(min(self.ni)),d-1))
             idx = L.argsort()[::-1]
             L = L[idx]
-            L[L<eps]=eps # Chek for numerical errors
+            L[L<EPS]=EPS # Chek for numerical errors
             dL,p = sp.absolute(sp.diff(L)),0
             dL /= dL.max()
             while sp.any(dL[p:]>th):
@@ -305,8 +305,8 @@ class HDGMM():
                  # Estim noise part
                 self.b.append((self.trace[c]-self.a[c].sum())/(d-self.pi[c]))
                 # Check for very small value of b
-                if self.b[c]<eps: 
-                    self.b[c]=eps
+                if self.b[c]<EPS: 
+                    self.b[c]=EPS
                 # Compute logdet
                 self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b[c])) 
                 # Update the Q matrices
@@ -318,10 +318,10 @@ class HDGMM():
             num = sum(map(lambda prop,pi,L,trace:prop*(trace-L[:pi].sum()),self.prop,self.pi,self.L,self.trace))
 
             # Check for very small values of b
-            if num<eps:
-                self.b = [eps for i in xrange(C)] 
-            elif denom<eps:
-                self.b = [1/eps for i in xrange(C)] 
+            if num<EPS:
+                self.b = [EPS for i in xrange(C)] 
+            elif denom<EPS:
+                self.b = [1/EPS for i in xrange(C)] 
             else:
                 self.b = [num/denom for i in xrange(C)]               
             
