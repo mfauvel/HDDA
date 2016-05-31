@@ -8,6 +8,7 @@ import accuracy_index as ai
 ## Numerical precision
 eps = sp.finfo(sp.float64).eps
 MAX = sp.finfo(sp.float64).max
+
 ## Empirical estimators for EM
 def soft_cov(x,m,ti,ni):
     """
