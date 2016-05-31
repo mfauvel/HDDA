@@ -9,19 +9,6 @@ import accuracy_index as ai
 EPS = sp.finfo(sp.float64).eps
 MAX = sp.finfo(sp.float64).max
 
-## Empirical estimators for EM
-def soft_cov(x,m,ti,ni):
-    """
-    This function implements a soft estimation of the covariance function. It is used in the EM iterations
-    """
-    n,d=x.shape
-    ti_ = sp.copy(ti).reshape(n,1)
-    # Center the data
-    xc = x-m
-
-    # Compute the soft covariance matrix using <X.T,X>
-    return sp.dot(xc.T,xc*ti_)/(ni-1)
-
 ## HDDA Class
 class HDGMM():
     """
@@ -50,7 +37,6 @@ class HDGMM():
         self.ni = []          # Number of samples of each class
         self.prop = []        # Proportion of each class
         self.mean = []        # Mean vector
-        self.cov = []         # Covariance matrix
         self.pi=[]            # Signal subspace size
         self.L = []           # Eigenvalues of covariance matrices
         self.Q = []           # Eigenvectors of covariance matrices
@@ -62,6 +48,7 @@ class HDGMM():
         self.q = []           # Number of parameters of the full models
         self.bic = []         # bic values over the iterations
         self.niter = None     # Number of iterations
+        self.X = []           # Matrice to project samples when n<d
 
     def free(self,full=False):
         """This  function free some  parameters of the  model. It is  used to
@@ -80,12 +67,12 @@ class HDGMM():
             self.ni = []          # Number of samples of each class
             self.prop = []        # Proportion of each class
             self.mean = []        # Mean vector
-            self.cov = []         # Covariance matrix
             self.pi=[]            # Signal subspace size
             self.L = []           # Eigenvalues of covariance matrices
             self.Q = []
             self.trace = []
-        
+            self.X = []
+            
     def fit(self,x,y=None,param=None):
         """
         This function fit the HDDA model
@@ -225,7 +212,11 @@ class HDGMM():
             exit()
             
         ## Compute the whole covariance matrix
-        self.W = sp.cov(x,rowvar=0)
+        X = (x - sp.mean(x,axis=0))/sp.sqrt(n)
+        if n >= d:
+            self.W = sp.dot(X.T,X)
+        else:
+            self.W = sp.dot(X,X.T)
         
         ## Learn the empirical of the model for each class
         for c in xrange(C):
@@ -234,18 +225,19 @@ class HDGMM():
                 self.ni.append(j.size)
                 self.prop.append(float(self.ni[c])/n)
                 self.mean.append(sp.mean(x[j,:],axis=0))
-                cov = sp.cov(x[j,:],rowvar=0)
+                cov = sp.cov(x[j,:],rowvar=0) # TODO: Do the supervised cases
             else: # Unsupervised case
                 self.ni.append(y[:,c].sum())
                 self.prop.append(float(self.ni[c])/n)
                 self.mean.append(sp.average(x,weights=y[:,c],axis=0))
-                cov = soft_cov(x,self.mean[c],y[:,c],self.ni[c])
-                
-            self.cov.append(cov)
-            if int(self.ni[c]>=d): # Check if the covariance matrix is full rank
-                L,Q = linalg.eigh(cov)
-            else: # If not, compute only the ni first eigenvalues/eigenvectors
-                L,Q = linalg.eigh(cov,eigvals=(d-int(self.ni[c]),d-1)) 
+                X = (x-self.mean[c])*sp.sqrt(y[:,c]).reshape(n,1)/sp.sqrt(self.ni[c])
+                if n >= d:
+                    cov = sp.dot(X.T,X)
+                else:
+                    cov = sp.dot(X,X.T)
+                    self.X.append(X)
+
+            L,Q = linalg.eigh(cov)
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
             L[L<EPS]=EPS # Chek for numerical errors
@@ -259,17 +251,15 @@ class HDGMM():
         """
         C = len(self.ni)
         d = self.mean[0].size
-
+        n = sp.sum(self.ni).astype(int)
+        
         # Get parameters
         th = param['th']
 
         # For common size subspace models
         if self.model in ('M2','M4','M6','M8'):
             # Compute intrinsic dimension on the whole data set
-            if int(min(self.ni)>=d):  # Check if the covariance matrix of the class with the smallest size is full rank
-                L = linalg.eigh(self.W,eigvals_only=True)
-            else:
-                L = linalg.eigh(self.W,eigvals_only=True,eigvals=(d-int(min(self.ni)),d-1))
+            L = linalg.eigh(self.W,eigvals_only=True)
             idx = L.argsort()[::-1]
             L = L[idx]
             L[L<EPS]=EPS # Chek for numerical errors
@@ -307,10 +297,6 @@ class HDGMM():
                 # Check for very small value of b
                 if self.b[c]<EPS: 
                     self.b[c]=EPS
-                # Compute logdet
-                self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b[c])) 
-                # Update the Q matrices
-                self.Q[c] = self.Q[c][:,:self.pi[c]]
                 
         elif self.model in ('M3','M4','M7','M8'):# Noise common
             # Estimation of b
@@ -330,11 +316,18 @@ class HDGMM():
                 self.a.append(self.L[c][:self.pi[c]])
                 if self.model in ('M7','M8'):
                     self.a[c][:] = self.a[c][:].mean()
-                # Compute logdet
-                self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b[c])) 
-                # Update the Q matrices
+
+        # Compute remainings parameters
+        for c in xrange(C):            
+            # Compute logdet
+            self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b[c]))
+
+            # Update the Q matrices
+            if n >= d :
                 self.Q[c] = self.Q[c][:,:self.pi[c]]
-                
+            else:
+                self.Q[c] = sp.dot(self.X[c].T,self.Q[c][:,:self.pi[c]])/self.L[c][:self.pi[c]]
+
         # Compute the number of parameters of the model
         self.q = C*d + (C-1) + sum(map(lambda p:p*(d-(p+1)/2),self.pi)) # Mean vectors + proportion + eigenvectors
         if self.model in ('M1','M3','M5','M7'): # Number of noise subspaces
