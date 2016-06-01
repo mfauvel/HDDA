@@ -96,20 +96,23 @@ class HDGMM():
                 
         # If unsupervised case
         if y is None: # Initialisation of the class membership
-            init = param['init']
             EM,ITER,ITERMAX,TOL,LL = True,0,param['itermax'],param['tol'],[]
-            if init is 'kmeans':
-                y = KMeans(n_clusters=param['C'],n_init=5,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
-                # Check for minimal size of cluster
-                nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
-                if sp.any(nc<2):
-                    self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
-                    return None
-                else:
-                    y += 1 # Label starts at one
-            elif init is 'random':
-                sp.random.seed(param['random_state'])
-                y = sp.random.randint(1,high=param['C']+1,size=n)
+            if param['C'] == 1:
+                y = sp.ones((n,1))
+            else:
+                init = param['init']
+                if init is 'kmeans':
+                    y = KMeans(n_clusters=param['C'],n_init=5,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
+                    # Check for minimal size of cluster
+                    nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
+                    if sp.any(nc<2):
+                        self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
+                        return None
+                    else:
+                        y += 1 # Label starts at one
+                elif init is 'random':
+                    sp.random.seed(param['random_state'])
+                    y = sp.random.randint(1,high=param['C']+1,size=n)
                 
         # Initialization of the parameter
         self.fit_init(x,y)
@@ -137,7 +140,7 @@ class HDGMM():
                 # Compute the BIC and do the E step
                 ll,K=self.loglike(x)
                 LL.append(ll)
-                if abs((LL[-1]-LL[-2])/LL[-2]) <TOL:
+                if abs(LL[-1]-LL[-2]) < TOL:
                     break
                 else:
                     ITER += 1
