@@ -176,7 +176,7 @@ class HDGMM():
             exit()
             
         ## Compute the whole covariance matrix
-        X = (x - sp.mean(x,axis=0))/sp.sqrt(n)
+        X = (x - sp.mean(x,axis=0))/sp.sqrt(float(n))
         if n >= d:
             self.W = sp.dot(X.T,X)
         else:
@@ -190,17 +190,19 @@ class HDGMM():
                 self.ni.append(j.size)
                 self.prop.append(float(self.ni[c])/n)
                 self.mean.append(sp.mean(x[j,:],axis=0))
-                cov = sp.cov(x[j,:],rowvar=0) # TODO: Do the supervised cases
+                X = (x[j,:]-self.mean[c])/sp.sqrt(float(self.ni[c]))
+
             else: # Unsupervised case
                 self.ni.append(y[:,c].sum())
                 self.prop.append(float(self.ni[c])/n)
                 self.mean.append(sp.average(x,weights=y[:,c],axis=0))
                 X = (x-self.mean[c])*sp.sqrt(y[:,c]).reshape(n,1)/sp.sqrt(self.ni[c])
-                if n >= d:
-                    cov = sp.dot(X.T,X)
-                else:
-                    cov = sp.dot(X,X.T)
-                    self.X.append(X)
+
+            if n >= d:
+                cov = sp.dot(X.T,X)
+            else:
+                cov = sp.dot(X,X.T)
+                self.X.append(X)
 
             L,Q = linalg.eigh(cov)
             idx = L.argsort()[::-1]
@@ -400,6 +402,6 @@ class HDGMM():
         ## Compute the Loglikelhood
         K *= (-0.5)
         Km = K.max(axis=1).reshape(n,1)
-        LL = (sp.log(sp.exp(K-Km).sum(axis=1))+Km).sum()
+        LL = (sp.log(sp.exp(K-Km).sum(axis=1)).reshape(n,1)+Km).sum()
         K *= -2
         return LL,K
