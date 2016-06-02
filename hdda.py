@@ -46,7 +46,8 @@ class HDGMM():
         self.logdet = []      # Pre-computation of the logdet of covariance matrices using HDDA models
         self.model=model      # Name of the model
         self.q = []           # Number of parameters of the full models
-        self.bic = []         # bic values over the iterations
+        self.bic = []         # bic values of the model
+        self.icl = []         # icl values of the model
         self.niter = None     # Number of iterations
         self.X = []           # Matrice to project samples when n<d
 
@@ -220,17 +221,14 @@ class HDGMM():
         """
         This function compute the parcimonious HDDA model from the empirical estimates obtained with fit_init
         """
+        ## Get parameters
         C = len(self.ni)
-        d = self.mean[0].size
-        n = sp.sum(self.ni).astype(int)
-        
-        # Get parameters
+        n,d = sp.sum(self.ni).astype(int),self.mean[0].size
         th = param['th']
 
-        # For common size subspace models
-        if self.model in ('M2','M4','M6','M8'):
-            # Compute intrinsic dimension on the whole data set
-            L = linalg.eigh(self.W,eigvals_only=True)
+        ## Estimation of the signal subspace
+        if self.model in ('M2','M4','M6','M8'): # For common size subspace models
+            L = linalg.eigh(self.W,eigvals_only=True) # Compute intrinsic dimension on the whole data set
             idx = L.argsort()[::-1]
             L = L[idx]
             L[L<EPS]=EPS # Chek for numerical errors
@@ -238,64 +236,52 @@ class HDGMM():
             dL /= dL.max()
             while sp.any(dL[p:]>th):
                 p += 1
+            self.pi = [p for c in xrange(C)]
             
-        for c in xrange(C):
-            # Estimation of the signal subspace
-            if self.model in ('M1','M3','M5','M7'):
+        elif self.model in ('M1','M3','M5','M7'): # For specific size subspace models
+            for c in xrange(C):
                 # Scree test
                 dL,pi = sp.absolute(sp.diff(self.L[c])),1
                 dL /= dL.max()
                 while sp.any(dL[pi:]>th):
                     pi += 1
+                self.pi.append(pi)
                 
-            elif self.model in ('M2','M4','M6','M8'):
-                pi = p
-            if pi >= d:
-                pi -= 1
-                
-            self.pi.append(pi)
-            
+        self.pi = [(d-1) if sPI >= d else sPI for sPI in self.pi] # Check if pi >= d
+
+        ## Estim signal part
+        self.a = [sL[:sPI] for sL,sPI in zip(self.L,self.pi)]
+        if self.model in ('M5','M6','M7','M8'):
+            self.a = [sp.repeat(sA[:].mean(),sA.size) for sA in self.a]
+
+        ## Estim noise term
         if self.model in ('M1','M2','M5','M6'): # Noise free
-            for c in xrange(C):
-                # Estim signal part
-                self.a.append(self.L[c][:self.pi[c]])
-                if self.model in ('M5','M6'):
-                    self.a[c][:] = self.a[c][:].mean()
-                 # Estim noise part
-                self.b.append((self.trace[c]-self.a[c].sum())/(d-self.pi[c]))
-                # Check for very small value of b
-                if self.b[c]<EPS: 
-                    self.b[c]=EPS
+            self.b = [(sT-sA.sum())/(d-sPI) for sT,sA,sPI in zip(self.trace,self.a,self.pi)]
+            # Check for very small value of b
+            self.b = [b if b > EPS else EPS for b in self.b]
                 
         elif self.model in ('M3','M4','M7','M8'):# Noise common
             # Estimation of b
-            denom = d - sum(map(lambda prop,pi:prop*pi,self.prop,self.pi))
-            num = sum(map(lambda prop,pi,L,trace:prop*(trace-L[:pi].sum()),self.prop,self.pi,self.L,self.trace))
+            denom = d - sp.sum([sPR*sPI for sPR,sPI in zip(self.prop,self.pi)])
+            num = sp.sum([sPR*(sT-sA.sum()) for sPR,sT,sA in zip(self.prop,self.trace,self.a)])
 
-            # Check for very small values of b
+            # Check for very small values
             if num<EPS:
                 self.b = [EPS for i in xrange(C)] 
             elif denom<EPS:
                 self.b = [1/EPS for i in xrange(C)] 
             else:
                 self.b = [num/denom for i in xrange(C)]               
-            
-            for c in xrange(C):
-                # Estim signal part
-                self.a.append(self.L[c][:self.pi[c]])
-                if self.model in ('M7','M8'):
-                    self.a[c][:] = self.a[c][:].mean()
 
-        # Compute remainings parameters
-        for c in xrange(C):            
-            # Compute logdet
-            self.logdet.append(sp.log(self.a[c]).sum() + (d-self.pi[c])*sp.log(self.b[c]))
-
-            # Update the Q matrices
-            if n >= d :
-                self.Q[c] = self.Q[c][:,:self.pi[c]]
-            else:
-                self.Q[c] = sp.dot(self.X[c].T,self.Q[c][:,:self.pi[c]])/self.L[c][:self.pi[c]]
+        ## Compute remainings parameters
+        # Precompute logdet
+        self.logdet  = [(sp.log(sA).sum() + (d-sPI)*sp.log(sB)) for sA,sPI,sB in zip(self.a,self.pi,self.b)]  
+        # Update the Q matrices
+        if n >= d :
+            self.Q = [sQ[:,:sPI] for sQ,sPI in zip(self.Q,self.pi)]
+        else:
+            self.Q = [sp.dot(sX.T,sQ[:,:sPI])/sp.sqrt(sL[:sPI]) for sX,sQ,sPI,sL in (self.X,self.Q,self.pi,self.L)]
+            # self.Q[c] = sp.dot(self.X[c].T,self.Q[c][:,:self.pi[c]])/self.L[c][:self.pi[c]]
 
         # Compute the number of parameters of the model
         self.q = C*d + (C-1) + sum(map(lambda p:p*(d-(p+1)/2),self.pi)) # Mean vectors + proportion + eigenvectors
