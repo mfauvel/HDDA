@@ -74,7 +74,7 @@ class HDGMM():
             self.trace = []
             self.X = []
             
-    def fit(self,x,y=None,param=None):
+    def fit(self,x,y=None,param=None,yi=None):
         """
         This function fit the HDDA model
 
@@ -114,7 +114,13 @@ class HDGMM():
                 elif init is 'random':
                     sp.random.seed(param['random_state'])
                     y = sp.random.randint(1,high=param['C']+1,size=n)
-                
+                elif init is 'user':
+                    if param['C'] != yi.max():
+                        print "The number of class does not match is param['C'] and yi"                    
+                    y = yi
+                else:
+                    print "Initialization should be kmeans or random or user"
+                    return None
         # Initialization of the parameter
         self.fit_init(x,y)
         self.fit_update(param)
@@ -211,7 +217,7 @@ class HDGMM():
             L,Q = linalg.eigh(cov)
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
-            # L[L<EPS]=EPS # Chek for numerical errors
+            L[L<EPS]=EPS # Chek for numerical errors
             self.L.append(L)
             self.Q.append(Q)
             self.trace.append(cov.trace())
@@ -283,7 +289,7 @@ class HDGMM():
             self.Q = [sp.dot(sX.T,sQ[:,:sPI])/sp.sqrt(sL[:sPI]) for sX,sQ,sPI,sL in (self.X,self.Q,self.pi,self.L)]
             # self.Q[c] = sp.dot(self.X[c].T,self.Q[c][:,:self.pi[c]])/self.L[c][:self.pi[c]]
 
-        # Compute the number of parameters of the model
+        ## Compute the number of parameters of the model
         self.q = C*d + (C-1) + sum(map(lambda p:p*(d-(p+1)/2),self.pi)) # Mean vectors + proportion + eigenvectors
         if self.model in ('M1','M3','M5','M7'): # Number of noise subspaces
             self.q += C 
