@@ -286,7 +286,7 @@ class HDGMM():
         if n >= d :
             self.Q = [sQ[:,:sPI] for sQ,sPI in zip(self.Q,self.pi)]
         else:
-            self.Q = [sp.dot(sX.T,sQ[:,:sPI])/sp.sqrt(sL[:sPI]) for sX,sQ,sPI,sL in (self.X,self.Q,self.pi,self.L)]
+            self.Q = [sp.dot(sX.T,sQ[:,:sPI])/sp.sqrt(sL[:sPI]) for sX,sQ,sPI,sL in zip(self.X,self.Q,self.pi,self.L)]
             # self.Q[c] = sp.dot(self.X[c].T,self.Q[c][:,:self.pi[c]])/self.L[c][:self.pi[c]]
 
         ## Compute the number of parameters of the model
