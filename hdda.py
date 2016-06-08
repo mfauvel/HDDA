@@ -126,14 +126,11 @@ class HDGMM():
         self.fit_update(param)
 
         if EM is True: # Unsupervised case, needs iteration
-            ll,K = self.loglike(x)
+            ll,T = self.loglike(x)
             LL.append(ll)
             while(ITER<ITERMAX):
-                # E step - Use the precomputed K
-                T = sp.empty_like(K)
-                for c in xrange(param['C']):
-                    T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
-                    
+                # E step - Use the precomputed T
+                
                 # Check for empty classes
                 if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
                     self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
@@ -145,18 +142,13 @@ class HDGMM():
                 self.fit_update(param)
 
                 # Compute the BIC and do the E step
-                ll,K=self.loglike(x)
+                ll,T=self.loglike(x)
                 LL.append(ll)
                 if abs(LL[-1]-LL[-2]) < TOL:
                     break
                 else:
                     ITER += 1
-
-            # Compute the membership
-            T = sp.empty_like(K)
-            for c in xrange(param['C']):
-                T[:,c] = 1 / sp.exp(0.5*(K[:,c].reshape(n,1)-K)).sum(axis=1)
-            
+        
             # Return the class membership and some parameters of the optimization
             self.LL = LL
             self.bic = 2*LL[-1] - self.q*sp.log(n)
@@ -338,7 +330,7 @@ class HDGMM():
             K *= -0.5
             return yp,K
         elif out is 'ki':
-            return K        
+            return K
 
     def CV(self,x,y,param,v=5,seed=0):
         """
@@ -399,4 +391,16 @@ class HDGMM():
         Km = K.max(axis=1).reshape(n,1)
         LL = (sp.log(sp.exp(K-Km).sum(axis=1)).reshape(n,1)+Km).sum()
         K *= -2
-        return LL,K
+        return LL,self.posterior(K)
+
+    def posterior(self,K):
+        """Compute the posterior probability given the membership function
+        :param k: A n \times c matrix containing the decision function (obtained with predict)
+        """
+        n = K.shape[0]
+        T = sp.exp(-0.5*K)
+        T /= T.sum(axis=1).reshape(n,1)
+        T[T<EPS]=EPS
+        return T
+
+            
