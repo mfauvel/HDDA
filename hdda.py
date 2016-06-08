@@ -287,10 +287,10 @@ class HDGMM():
             self.Q = [sQ[:,:sPI] for sQ,sPI in zip(self.Q,self.pi)]
         else:
             self.Q = [sp.dot(sX.T,sQ[:,:sPI])/sp.sqrt(sL[:sPI]) for sX,sQ,sPI,sL in zip(self.X,self.Q,self.pi,self.L)]
-            # self.Q[c] = sp.dot(self.X[c].T,self.Q[c][:,:self.pi[c]])/self.L[c][:self.pi[c]]
+            
 
         ## Compute the number of parameters of the model
-        self.q = C*d + (C-1) + sum(map(lambda p:p*(d-(p+1)/2),self.pi)) # Mean vectors + proportion + eigenvectors
+        self.q = C*d + (C-1) + sum([sPI*(d-(sPI+1)/2) for sPI in self.pi])
         if self.model in ('M1','M3','M5','M7'): # Number of noise subspaces
             self.q += C 
         elif self.model in ('M2','M4','M6','M8'):
