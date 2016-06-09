@@ -74,7 +74,7 @@ class HDGMM():
             self.trace = []
             self.X = []
             
-    def fit(self,x,y=None,param=None,yi=None):
+    def fit(self,x,y=None,param={},yi=None):
         """
         This function fit the HDDA model
 
@@ -403,4 +403,47 @@ class HDGMM():
         T[T<EPS]=EPS
         return T
 
-            
+    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0):
+        """
+        This  method fits  all the  model given the  parameter th  and the
+        number of class  C, and return the best model  in terms of the
+        BIC or ICL.
+        """
+        nmod, nC, nt = len(MODEL), len(C), len(th)
+        BIC= sp.zeros((nmod,nC,nt))
+        param = {'init':'user','tol':0.00001,'random_state':random_state}
+        for i,c_ in enumerate(C):
+            param['C']=c_
+            # Kmeans initialization
+            yi = KMeans(n_clusters=param['C'],n_init=10,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
+            # Check for minimal size of cluster
+            nc = sp.asarray([len(sp.where(yi==i)[0]) for i in xrange(param['C'])])
+            if sp.any(nc<2):
+                BIC[:,i,:] = MIN
+            else:
+                yi+=1
+                for m,model_ in enumerate(MODEL): # Loop over the models
+                    for j,th_ in enumerate(th): # Loop over the threshold
+                        param['th']=th_
+                        model = HDGMM(model=model_)
+                        model.fit(x,param=param,yi=yi)
+                        BIC[m,i,j]=model.bic              
+
+        if VERBOSE:
+            print("Models \t C \t th \t BIC")
+            for m in xrange(len(MODEL)):
+                t = sp.where(BIC[m,:,:]==BIC[m,:,:].max())
+                print MODEL[m] + " \t " + str(C[t[0][0]]) + " \t " + str(th[t[1][0]])  + " \t " + str(BIC[m,:,:].max())
+
+            t = sp.where(BIC==BIC.max())
+            print ("\nBest model is {}".format(MODEL[t[0][0]]))
+        else:
+            t = sp.where(BIC==BIC.max())
+
+        ## Return the best model
+        param['init']='kmeans'
+        param['C']=C[t[1][0]]
+        param['th']=th[t[2][0]]
+        self.model = MODEL[t[0][0]]
+        self.fit(x,param=param)
+        
