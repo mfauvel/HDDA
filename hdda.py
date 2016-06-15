@@ -403,7 +403,6 @@ class HDGMM():
         T[T>E_MAX] = E_MAX
         sp.exp(T,out=T)
         T /= T.sum(axis=1).reshape(n,1)
-        T[T<EPS]=EPS
         return T
 
     def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0):
