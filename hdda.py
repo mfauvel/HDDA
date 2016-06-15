@@ -5,10 +5,11 @@ from sklearn.cross_validation import StratifiedKFold
 from sklearn.cluster import KMeans
 import accuracy_index as ai
 
-## Numerical precision
+## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
 MIN = sp.finfo(sp.float64).min
-
+MAX = sp.finfo(sp.float64).max
+E_MAX = sp.log(MAX) # Maximum value that is possible to compute with sp.exp
 ## HDDA Class
 class HDGMM():
     """
@@ -398,7 +399,9 @@ class HDGMM():
         :param k: A n \times c matrix containing the decision function (obtained with predict)
         """
         n = K.shape[0]
-        T = sp.exp(-0.5*K)
+        T = -0.5*K
+        T[T>E_MAX] = E_MAX
+        sp.exp(T,out=T)
         T /= T.sum(axis=1).reshape(n,1)
         T[T<EPS]=EPS
         return T
