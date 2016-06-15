@@ -132,8 +132,8 @@ class HDGMM():
             while(ITER<ITERMAX):
                 # E step - Use the precomputed T
                 
-                # Check for empty classes
-                if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
+                # Check for division per zeros or empty classes
+                if (not sp.isfinite(T).all()) or sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
                     self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
                     return None
                 
@@ -313,13 +313,14 @@ class HDGMM():
         ## Start the prediction for each class
         for c in xrange(C):
             # Compute the constant term
-            cst = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
+            K[:,c] = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
             # Remove the mean
             xtc = xt-self.mean[c]
             # Do the projection
             Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T))
             temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c]))
-            K[:,c] = sp.sum(temp**2,axis=1) + sp.sum((xtc - Px)**2,axis=1)/self.b[c] + cst
+            K[:,c] += sp.sum(temp**2,axis=1)
+            K[:,c] += sp.sum((xtc - Px)**2,axis=1)/self.b[c]
             
         ## Assign the label to the minimum value of K 
         if out is None:
@@ -391,19 +392,28 @@ class HDGMM():
         K *= (-0.5)
         Km = K.max(axis=1).reshape(n,1)
         LL = (sp.log(sp.exp(K-Km).sum(axis=1)).reshape(n,1)+Km).sum()
-        K *= -2
-        return LL,self.posterior(K)
+        return LL,self.posterior(T=K) # we don't modify K since in the posterior it will be used as it
 
-    def posterior(self,K):
+    def posterior(self,K=None,T=None):
         """Compute the posterior probability given the membership function
         :param k: A n \times c matrix containing the decision function (obtained with predict)
         """
-        n = K.shape[0]
-        T = -0.5*K
+        n = T.shape[0]
+        if K is None and T is None:
+            print "At least one of K or T should be not None"
+            exit()
+            
+        if K is not None:
+            T = -0.5*K            
+           
         T[T>E_MAX] = E_MAX
-        sp.exp(T,out=T)
-        T /= T.sum(axis=1).reshape(n,1)
+        sp.exp(T,out=T) # No need to take 0.5
+        Ts = T.sum(axis=1).reshape(n,1)
+        # Numerical presicion is handle later in the E-step
+        with sp.errstate(invalid='ignore'):
+            T /= Ts
         return T
+        
 
     def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0):
         """
