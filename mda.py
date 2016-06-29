@@ -11,10 +11,8 @@ def workerMda(x,MODEL,th,C):
     """
     model = HDGMM()
     model.bic = HDDA.MIN
-    iter = 0
-    while model.bic == HDDA.MIN:
-        model.fit_all(x,MODEL=MODEL,th=th,C=C,random_state=iter)
-        iter+=1
+    model.fit_all(x,MODEL=MODEL,th=th,C=C,random_state=iter)
+    iter+=1
     return model
 
 class MDA():

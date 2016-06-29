@@ -2,7 +2,6 @@
 import scipy as sp
 from scipy import linalg
 from sklearn.cluster import KMeans
-import accuracy_index as ai
 
 ## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -334,48 +333,48 @@ class HDGMM():
         elif out is 'ki':
             return K
 
-    def CV(self,x,y,param,v=5,seed=0):
-        """
-        This function computes the cross validation estimate of the Kappa coefficient of agreement given a set of parameters in the supervised case. 
-        To speed up the processing, the empirical estimate (mean, proportion, eigendecomposition) is done only one for each fold.
+    # def CV(self,x,y,param,v=5,seed=0):
+    #     """
+    #     This function computes the cross validation estimate of the Kappa coefficient of agreement given a set of parameters in the supervised case. 
+    #     To speed up the processing, the empirical estimate (mean, proportion, eigendecomposition) is done only one for each fold.
         
-        :param x: The sample matrix, is of size x \times d where n is the number of samples and d is the number of variables
-        :param y: The vector of corresponding labels, is of size n \times 1 in the supervised case, otherwise it is None
-        :param param: A dictionnary of parameters.
-        :param v: the number of folds of the CV.
-        :param seed: the initial state of the random generator.
-        :return: the optimal value for the given model and the corresponding Kappa
-        """
-        # Initialization of the stratified K-Fold
-        KF = StratifiedKFold(y.reshape(y.size,),v,random_state=seed)
+    #     :param x: The sample matrix, is of size x \times d where n is the number of samples and d is the number of variables
+    #     :param y: The vector of corresponding labels, is of size n \times 1 in the supervised case, otherwise it is None
+    #     :param param: A dictionnary of parameters.
+    #     :param v: the number of folds of the CV.
+    #     :param seed: the initial state of the random generator.
+    #     :return: the optimal value for the given model and the corresponding Kappa
+    #     """
+    #     # Initialization of the stratified K-Fold
+    #     KF = StratifiedKFold(y.reshape(y.size,),v,random_state=seed)
 
-        # Get parameters grid
-        if self.model in ('M1','M3','M5','M7'): # TODO: Add other models
-            param_grid = param['th']
-        elif self.model in ('M2','M4','M6','M8'):
-            param_grid = param['p']
+    #     # Get parameters grid
+    #     if self.model in ('M1','M3','M5','M7'): # TODO: Add other models
+    #         param_grid = param['th']
+    #     elif self.model in ('M2','M4','M6','M8'):
+    #         param_grid = param['p']
             
-        # Initialize the confusion matrix and the Kappa coefficient vector
-        acc,Kappa = ai.CONFUSION_MATRIX(),sp.zeros((len(param_grid)))
-        for train,test in KF:
-            modelTemp = HDGMM(model=self.model)
-            modelTemp.fit_init(x[train,:],y[train])
-            for i,param_grid_ in enumerate(param_grid):
-                # Fit model on train subests
-                if modelTemp.model in ('M1','M3','M5','M7'):
-                    param_= {'th':param_grid_}
-                elif modelTemp.model in ('M2','M4','M6','M8'):
-                    param_= {'p':param_grid_}
-                modelTemp.fit_update(param_)
-                # Predict on test subset
-                yp = modelTemp.predict(x[test,:])
-                acc.compute_confusion_matrix(yp,y[test])
-                Kappa[i] += acc.Kappa
-                modelTemp.free()
-        Kappa /= v
-        # Select the value with the highest Kappa value
-        ind = sp.argmax(Kappa)
-        return param_grid[ind],Kappa[ind]
+    #     # Initialize the confusion matrix and the Kappa coefficient vector
+    #     acc,Kappa = ai.CONFUSION_MATRIX(),sp.zeros((len(param_grid)))
+    #     for train,test in KF:
+    #         modelTemp = HDGMM(model=self.model)
+    #         modelTemp.fit_init(x[train,:],y[train])
+    #         for i,param_grid_ in enumerate(param_grid):
+    #             # Fit model on train subests
+    #             if modelTemp.model in ('M1','M3','M5','M7'):
+    #                 param_= {'th':param_grid_}
+    #             elif modelTemp.model in ('M2','M4','M6','M8'):
+    #                 param_= {'p':param_grid_}
+    #             modelTemp.fit_update(param_)
+    #             # Predict on test subset
+    #             yp = modelTemp.predict(x[test,:])
+    #             acc.compute_confusion_matrix(yp,y[test])
+    #             Kappa[i] += acc.Kappa
+    #             modelTemp.free()
+    #     Kappa /= v
+    #     # Select the value with the highest Kappa value
+    #     ind = sp.argmax(Kappa)
+    #     return param_grid[ind],Kappa[ind]
 
     def loglike(self,x):
         """
