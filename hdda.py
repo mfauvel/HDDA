@@ -244,8 +244,9 @@ class HDGMM():
                 while sp.any(dL[pi:]>th):
                     pi += 1
                 self.pi.append(pi)
-                
-        self.pi = [(d-1) if sPI >= d else sPI for sPI in self.pi] # Check if pi >= d
+
+        # Check if pi >= ni-1 or d-1xo
+        self.pi = [sPI if sPI < int(min(sNI,d)-1) else int(min(sNI,d)-2) for sPI,sNI in zip(self.pi,self.ni)] 
 
         ## Estim signal part
         self.a = [sL[:sPI] for sL,sPI in zip(self.L,self.pi)]
@@ -375,7 +376,6 @@ class HDGMM():
     #     # Select the value with the highest Kappa value
     #     ind = sp.argmax(Kappa)
     #     return param_grid[ind],Kappa[ind]
-
     def loglike(self,x):
         """
         Compute the log likelyhood given a set of samples.
