@@ -21,19 +21,21 @@ the best results in terms of classification accuracy.
 :PROPERTIES:
 :session:  softwares
 :exports:  both
+:results: output raw
 :END:
 Just  download  the package.  It  has  been  tested on  linux,  Debian
 Wheezy.  [[http://www.scipy.org/][Scipy]] and  [[http://scikit-learn.org/stable/][Scikit]] should  be  installed. Also,  for a  faster
 processing, a good linear algebra library is preferable. [[http://openblas.net/][Openblas]] is a
 good option.
 
-#+BEGIN_SRC python 
+#+BEGIN_SRC python
 import platform
 platform.python_version()
 #+END_SRC
 
 #+RESULTS:
-: 0.14.0
+
+'2.7.9'
 
 #+BEGIN_SRC python
 import scipy as sp
@@ -41,15 +43,17 @@ sp.__version__
 #+END_SRC
 
 #+RESULTS:
-: 0.14.0
 
-#+BEGIN_SRC python
+'0.14.0'
+
+#+BEGIN_SRC python 
 import sklearn
 sklearn.__version__
 #+END_SRC
 
 #+RESULTS:
-: 0.17.1
+
+'0.17.1'
 
 * Usage
 ** Crabs data set
@@ -58,7 +62,7 @@ sklearn.__version__
 :noweb:    yes
 :exports:  both
 :session:  hdda
-:results:  output
+:results:  output raw
 :END:
 
 We provide an introductory example taken from Charles Bouveyron
@@ -79,12 +83,17 @@ C = [4] # For the example with do not fit the number of classes
 th = [0.05,0.1,0.2] # The threshold for the Cattel test
 #+END_SRC
 
+#+RESULTS:
+
 Load the data
+
 #+BEGIN_SRC python 
 data = sp.load('crabs.npz')
 X = data['x']
 Y = data['y']
 #+END_SRC
+
+#+RESULTS:
 
 For illustration, we can plot the projection on the two first PC axis.
 
@@ -95,6 +104,10 @@ Xp = pca.fit_transform(X)
 plt.scatter(Xp[:,0],Xp[:,1],c=Y,s=40)
 plt.savefig('2D_true_labels.png')
 #+END_SRC
+
+#+RESULTS:
+<matplotlib.figure.Figure object at 0x7f9808d5b5d0>
+<matplotlib.collections.PathCollection object at 0x7f98088a4e10>
 
 [[file:2D_true_labels.png]]
 
@@ -107,6 +120,20 @@ model = hdda.HDGMM()
 model.fit_all(X,MODEL=MODEL,C=C,th=th,VERBOSE=True)
 #+END_SRC
 
+#+RESULTS:
+
+Models 	 C 	 th 	 BIC
+M1 	 4 	 0.05 	 -2809.07919719
+M2 	 4 	 0.05 	 -2793.18425379
+M3 	 4 	 0.1 	 -2815.45170855
+M4 	 4 	 0.05 	 -2799.55676218
+M5 	 4 	 0.2 	 -2809.07920589
+M6 	 4 	 0.05 	 -2793.18425379
+M7 	 4 	 0.2 	 -2815.45171428
+M8 	 4 	 0.05 	 -2799.55676218
+
+Best model is M2
+
 From all the models, the one with the maximal BIC is selected. Then we
 plot the results.
 
@@ -117,6 +144,11 @@ plt.figure()
 plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
 plt.savefig("2D_hdda.png")
 #+END_SRC
+
+#+RESULTS:
+
+>>> <matplotlib.figure.Figure object at 0x7f98088a4ed0>
+<matplotlib.collections.PathCollection object at 0x7f9808823790>
 
 [[file:2D_hdda.png]]
 
@@ -131,6 +163,14 @@ plt.figure()
 plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
 plt.savefig('2D_gmm.png')
 #+END_SRC
+
+#+RESULTS:
+
+GMM(covariance_type='full', init_params='wmc', min_covar=0.001,
+  n_components=4, n_init=1, n_iter=100, params='wmc', random_state=None,
+  thresh=None, tol=0.001, verbose=0)
+<matplotlib.figure.Figure object at 0x7f9808a2e250>
+<matplotlib.collections.PathCollection object at 0x7f980872b750>
 
 [[file:2D_gmm.png]]
 
