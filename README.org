@@ -162,14 +162,6 @@ plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
 plt.savefig('2D_gmm.png')
 #+END_SRC
 
-#+RESULTS:
-
-GMM(covariance_type='full', init_params='wmc', min_covar=0.001,
-  n_components=4, n_init=1, n_iter=100, params='wmc', random_state=None,
-  thresh=None, tol=0.001, verbose=0)
-<matplotlib.figure.Figure object at 0x7f9808a2e250>
-<matplotlib.collections.PathCollection object at 0x7f980872b750>
-
 [[file:2D_gmm.png]]
 
 The complete file is available in [[file:script_crabs.py]].
@@ -210,6 +202,26 @@ model.fit_all(x,MODEL=MODEL,C=C,th=th,VERBOSE=True)
 toc = time.clock()
 print "Processing time: {}".format(toc-tic)
 #+END_SRC
+
+#+RESULTS:
+
+#+begin_example
+
+Number of samples: 159
+Number of variables: 68
+ Models 	 C 	 th 	 BIC
+M1 	 4 	 0.05 	 -58257.1815661
+M2 	 2 	 0.05 	 -59527.6014904
+M3 	 3 	 0.05 	 -58486.9513614
+M4 	 2 	 0.05 	 -59696.1778619
+M5 	 4 	 0.05 	 -58486.7455612
+M6 	 2 	 0.05 	 -59700.561086
+M7 	 3 	 0.05 	 -58723.13686
+M8 	 2 	 0.05 	 -59901.163825
+
+Best model is M1
+Processing time: 17.530738
+#+end_example
 
 #+BEGIN_SRC python :exports code
 # Plot data
