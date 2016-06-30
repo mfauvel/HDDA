@@ -62,7 +62,7 @@ sklearn.__version__
 :noweb:    yes
 :exports:  both
 :session:  hdda
-:results:  output raw
+:results:  output
 :END:
 
 We provide an introductory example taken from Charles Bouveyron
@@ -106,8 +106,6 @@ plt.savefig('2D_true_labels.png')
 #+END_SRC
 
 #+RESULTS:
-<matplotlib.figure.Figure object at 0x7f9808d5b5d0>
-<matplotlib.collections.PathCollection object at 0x7f98088a4e10>
 
 [[file:2D_true_labels.png]]
 
@@ -122,6 +120,8 @@ model.fit_all(X,MODEL=MODEL,C=C,th=th,VERBOSE=True)
 
 #+RESULTS:
 
+#+begin_example
+
 Models 	 C 	 th 	 BIC
 M1 	 4 	 0.05 	 -2809.07919719
 M2 	 4 	 0.05 	 -2793.18425379
@@ -133,6 +133,7 @@ M7 	 4 	 0.2 	 -2815.45171428
 M8 	 4 	 0.05 	 -2799.55676218
 
 Best model is M2
+#+end_example
 
 From all the models, the one with the maximal BIC is selected. Then we
 plot the results.
@@ -146,9 +147,6 @@ plt.savefig("2D_hdda.png")
 #+END_SRC
 
 #+RESULTS:
-
->>> <matplotlib.figure.Figure object at 0x7f98088a4ed0>
-<matplotlib.collections.PathCollection object at 0x7f9808823790>
 
 [[file:2D_hdda.png]]
 
