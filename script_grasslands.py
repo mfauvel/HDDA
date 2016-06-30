@@ -1,8 +1,3 @@
-for b in {B,G,R,NIR}
-do
-    echo [[file:grassland_$b.png]]
-done
-
 import hdda
 import scipy as sp
 import matplotlib.pyplot as plt

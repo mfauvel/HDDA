@@ -2,6 +2,7 @@
 #+AUTHOR: Mathieu Fauvel
 #+EMAIL: mathieu.fauvel@ensat.fr
 #+EXCLUDE_TAGS: noexport
+#+OPTIONS: toc:nil
 
 * Objectives
 The package provides a python implementation of the High Dimensional
@@ -16,21 +17,56 @@ The original =R= package available on the CRAN:
 Some of the models are actually implemented, those who usually provide
 the best results in terms of classification accuracy.
 
-* Install
-Just download the package. It has been tested on linux, Debian Wheezy
-with Python 2.7.
+* Install and requirements
+:PROPERTIES:
+:session:  softwares
+:exports:  both
+:END:
+Just  download  the package.  It  has  been  tested on  linux,  Debian
+Wheezy.  [[http://www.scipy.org/][Scipy]] and  [[http://scikit-learn.org/stable/][Scikit]] should  be  installed. Also,  for a  faster
+processing, a good linear algebra library is preferable. [[http://openblas.net/][Openblas]] is a
+good option.
 
-* Requirements
-[[http://www.scipy.org/][Scipy]] and [[http://scikit-learn.org/stable/][Scikit]] should be installed. Also, for a faster processing, a
-good linear algebra library is preferable. [[http://openblas.net/][Openblas]] is a good option.
+#+BEGIN_SRC python 
+import platform
+platform.python_version()
+#+END_SRC
+
+#+RESULTS:
+: 0.14.0
+
+#+BEGIN_SRC python
+import scipy as sp
+sp.__version__
+#+END_SRC
+
+#+RESULTS:
+: 0.14.0
+
+#+BEGIN_SRC python
+import sklearn
+sklearn.__version__
+#+END_SRC
+
+#+RESULTS:
+: 0.17.1
 
 * Usage
+** Crabs data set
+:PROPERTIES:
+:tangle:   script_crabs.py
+:noweb:    yes
+:exports:  both
+:session:  hdda
+:results:  output
+:END:
+
 We provide an introductory example taken from Charles Bouveyron
 thesis, on the /crabs/ data set. We also compare with the standard GMM
 with EM provided by scikit.
 
-First, load some packages and define some variables:
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports both :session hdda
+First, load packages and define some variables:
+#+BEGIN_SRC python 
 import hdda
 import matplotlib.pyplot as plt
 import scipy as sp
@@ -39,20 +75,20 @@ from sklearn import mixture
 
 # Parameters for HDDA
 MODEL = ['M1','M2','M3','M4','M5','M6','M7','M8']
-th,p = sp.linspace(0.2,0.95,num=4),sp.arange(1,5,1)
+C = [4] # For the example with do not fit the number of classes
+th = [0.05,0.1,0.2] # The threshold for the Cattel test
 #+END_SRC
 
-#+RESULTS:
-
 Load the data
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
+#+BEGIN_SRC python 
 data = sp.load('crabs.npz')
 X = data['x']
 Y = data['y']
 #+END_SRC
 
-For illustration, the projection on the two first PC axis is done
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
+For illustration, we can plot the projection on the two first PC axis.
+
+#+BEGIN_SRC python 
 plt.figure()
 pca = PCA(n_components=2)
 Xp = pca.fit_transform(X)
@@ -62,40 +98,20 @@ plt.savefig('2D_true_labels.png')
 
 [[file:2D_true_labels.png]]
 
-Then we learn each model and store the optimal BIC value and its
-corresponding parameters
+Then  we learn  each model  and store  the optimal  BIC value  and its
+corresponding  parameters.  It  can  be done  automatically  with  the
+=fit_all= method.
 
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
-BIC,POS = [],[]
-for model_ in MODEL:
-    bic=[]
-    for th_,p_ in zip(th,p):
-        model = hdda.HDGMM(model=model_)
-        param = {'th':th_,'p':p_,'C':4,'init':'kmeans'}
-        yp=model.fit(X,param=param)
-        bic.append(model.bic[-1])
-    BIC.append(sp.amin(bic))
-    POS.append(sp.argmin(bic))
-plt.figure()
-plt.plot(BIC)
-plt.savefig("bic.png")
+#+BEGIN_SRC python
+model = hdda.HDGMM()
+model.fit_all(X,MODEL=MODEL,C=C,th=th,VERBOSE=True)
 #+END_SRC
 
-[[file:bic.png]]
+From all the models, the one with the maximal BIC is selected. Then we
+plot the results.
 
-From all the models, the one with the minimal BIC is selected. Then
-we learn (again! can be saved from the previous loop...) and we plot
-the results.
-
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
-t = sp.argmin(BIC)
-best_model = MODEL[t]
-param = {'th':th[POS[t]],'p':p[POS[t]],'C':4,'init':'kmeans'}
-model=hdda.HDGMM(model=best_model)
-yp=model.fit(X,param=param)
-
-print "Best model "+best_model
-print "With parameter " + str(th[POS[t]]) + " and " +str(p[POS[t]])
+#+BEGIN_SRC python 
+yp=model.predict(X)
 
 plt.figure()
 plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
@@ -105,7 +121,8 @@ plt.savefig("2D_hdda.png")
 [[file:2D_hdda.png]]
 
 The same learning is done with the GMM from scikit, and we plot the results
-#+BEGIN_SRC python :tangle simu_crabs.py :noweb yes :exports code
+
+#+BEGIN_SRC python 
 clf = mixture.GMM(n_components=4, covariance_type='full')
 clf.fit(X)
 yp=clf.predict(X)
@@ -117,12 +134,74 @@ plt.savefig('2D_gmm.png')
 
 [[file:2D_gmm.png]]
 
-The file produce the following output
-#+BEGIN_SRC sh :exports both
-python simu_crabs.py
+The complete file is available in [[file:script_crabs.py]].
+** Grassland
+:PROPERTIES:
+:tangle:   script_grasslands.py
+:noweb:    yes
+:exports:  both
+:session:  grassland
+:results:  output
+:END:
+In this example, we show how  HDDA clusterizes pixels from a satellite
+image  time series.   Again, we  need  to load  data and  set up  some
+parameters.  Then  we use  the  =fit_all=  function  to learn  the  best
+model. This  is an example  of the work  of [[mailto:mailys.lopes@toulouse.inra.fr][Maïlys Lopes]]  on grassland
+monitoring from satellite image time series.
+
+#+BEGIN_SRC python
+import hdda
+import scipy as sp
+import matplotlib.pyplot as plt
+import time as time
+
+# Load data
+data = sp.load('prairie5.npy')
+x = data
+n,d=x.shape
+print "Number of samples: {}\n Number of variables: {}".format(n,d)
+# Parameters
+MODEL = ['M1','M2','M3','M4','M5','M6','M7','M8']
+th = [0.05,0.1,0.2]
+C = sp.arange(1,5)
+
+# Model Selection
+model = hdda.HDGMM()
+tic = time.clock()
+model.fit_all(x,MODEL=MODEL,C=C,th=th,VERBOSE=True)
+toc = time.clock()
+print "Processing time: {}".format(toc-tic)
+#+END_SRC
+
+#+BEGIN_SRC python :exports code
+# Plot data
+bands= ['B','G','R','NIR']
+
+for i,b in enumerate(bands):
+    plt.figure()
+    # Plot the samples
+    for j in xrange(n):
+        plt.plot(data[j,(i*17):((i+1)*17)],'k',lw=0.5)
+    # Plot the means
+    for j in xrange(len(model.mean)):
+        plt.plot(model.mean[j][(i*17):((i+1)*17)],lw=3)
+    plt.savefig('grassland_{}.png'.format(b))
 #+END_SRC
 
 #+RESULTS:
-| Best | model     |  M2 |     |   |
-| With | parameter | 0.2 | and | 1 |
+
+#+BEGIN_SRC sh :noweb yes :exports code :tangle no
+for b in {B,G,R,NIR}
+do
+    echo [[file:grassland_$b.png]]
+done
+#+END_SRC
+
+
+[[file:grassland_B.png]]
+[[file:grassland_G.png]]
+[[file:grassland_R.png]]
+[[file:grassland_NIR.png]]
+
+
 

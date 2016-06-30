@@ -245,7 +245,7 @@ class HDGMM():
                     pi += 1
                 self.pi.append(pi)
 
-        # Check if pi >= ni-1 or d-1xo
+        # Check if pi >= ni-1 or d-1
         self.pi = [sPI if sPI < int(min(sNI,d)-1) else int(min(sNI,d)-2) for sPI,sNI in zip(self.pi,self.ni)] 
 
         ## Estim signal part
