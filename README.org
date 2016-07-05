@@ -209,7 +209,7 @@ print "Processing time: {}".format(toc-tic)
 
 Number of samples: 159
 Number of variables: 68
- Models 	 C 	 th 	 BIC
+Models 	 C 	 th 	 BIC
 M1 	 4 	 0.05 	 -58257.1815661
 M2 	 2 	 0.05 	 -59527.6014904
 M3 	 3 	 0.05 	 -58486.9513614

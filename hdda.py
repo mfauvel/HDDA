@@ -234,8 +234,13 @@ class HDGMM():
             dL /= dL.max()
             while sp.any(dL[p:]>th):
                 p += 1
-            self.pi = [p for c in xrange(C)]
-            
+            minDim = int(min(min(self.ni),d))
+            # Check if p >= ni-1 or d-1
+            if p < minDim - 1 :
+                self.pi = [p for c in xrange(C)]
+            else:
+                self.pi = [(minDim-2) for c in xrange(C)]
+                        
         elif self.model in ('M1','M3','M5','M7'): # For specific size subspace models
             for c in xrange(C):
                 # Scree test
@@ -244,9 +249,10 @@ class HDGMM():
                 while sp.any(dL[pi:]>th):
                     pi += 1
                 self.pi.append(pi)
+            # Check if pi >= ni-1 or d-1
+            self.pi = [sPI if sPI < int(min(sNI,d)-1) else int(min(sNI,d)-2) for sPI,sNI in zip(self.pi,self.ni)] 
 
-        # Check if pi >= ni-1 or d-1
-        self.pi = [sPI if sPI < int(min(sNI,d)-1) else int(min(sNI,d)-2) for sPI,sNI in zip(self.pi,self.ni)] 
+
 
         ## Estim signal part
         self.a = [sL[:sPI] for sL,sPI in zip(self.L,self.pi)]
