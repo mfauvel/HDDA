@@ -60,7 +60,7 @@ sklearn.__version__
 :PROPERTIES:
 :tangle:   script_crabs.py
 :noweb:    yes
-:exports:  both
+:exports:  code
 :session:  hdda
 :results:  output
 :END:
@@ -169,7 +169,7 @@ The complete file is available in [[file:script_crabs.py]].
 :PROPERTIES:
 :tangle:   script_grasslands.py
 :noweb:    yes
-:exports:  both
+:exports:  code
 :session:  grassland
 :results:  output
 :END:
@@ -183,6 +183,7 @@ monitoring from satellite image time series.
 import hdda
 import scipy as sp
 import matplotlib.pyplot as plt
+from sklearn import mixture
 import time as time
 
 # Load data
@@ -204,12 +205,11 @@ print "Processing time: {}".format(toc-tic)
 #+END_SRC
 
 #+RESULTS:
-
 #+begin_example
 
 Number of samples: 159
 Number of variables: 68
-Models 	 C 	 th 	 BIC
+Models C 	 th 	 BIC
 M1 	 4 	 0.05 	 -58257.1815661
 M2 	 2 	 0.05 	 -59527.6014904
 M3 	 3 	 0.05 	 -58486.9513614
@@ -220,7 +220,7 @@ M7 	 3 	 0.05 	 -58723.13686
 M8 	 2 	 0.05 	 -59901.163825
 
 Best model is M1
-Processing time: 17.530738
+Processing time: 7.259858
 #+end_example
 
 #+BEGIN_SRC python :exports code
@@ -254,4 +254,52 @@ done
 [[file:grassland_NIR.png]]
 
 
+Let's do  the clustering  with the conventional  GMM from  =Scikit=. The
+best model is selected according to the BIC (taken from [[http://scikit-learn.org/stable/auto_examples/mixture/plot_gmm_selection.html][scikit]]).
+
+#+BEGIN_SRC python
+bicGmm = []
+lowest_bic  = sp.infty
+for c in C:
+    gmm = mixture.GMM(n_components=c, covariance_type='full')
+    gmm.fit(x)
+    bicGmm.append(gmm.bic(x))
+    if bicGmm[-1] < lowest_bic:
+        lowest_bic = bicGmm[-1]
+        best_gmm = gmm
+
+print bicGmm
+
+# Plot data
+bands= ['B','G','R','NIR']
+
+for i,b in enumerate(bands):
+    plt.figure()
+    # Plot the samples
+    for j in xrange(n):
+        plt.plot(data[j,(i*17):((i+1)*17)],'k',lw=0.5)
+    # Plot the means
+    for j in xrange(best_gmm.means_.shape[0]):
+        plt.plot(best_gmm.means_[j][(i*17):((i+1)*17)],lw=3)
+    plt.savefig('grassland_gmm_{}.png'.format(b))        
+#+END_SRC
+
+#+RESULTS:
+: [45879.790950867653, 51307.882479185893, 54318.95901862967, 55192.388129492014]
+
+
+
+#+BEGIN_SRC sh :noweb yes :exports code :tangle no
+for b in {B,G,R,NIR}
+do
+    echo [[file:grassland_gmm_$b.png]]
+done
+#+END_SRC
+
+#+RESULTS:
+ 
+[[file:grassland_gmm_B.png]]
+[[file:grassland_gmm_G.png]]
+[[file:grassland_gmm_R.png]]
+[[file:grassland_gmm_NIR.png]]
 
