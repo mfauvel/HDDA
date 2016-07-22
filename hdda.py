@@ -131,8 +131,8 @@ class HDGMM():
             while(ITER<ITERMAX):
                 # E step - Use the precomputed T
                 
-                # Check for division per zeros or empty classes
-                if (not sp.isfinite(T).all()) or sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
+                # Check for empty classes
+                if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
                     self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
                     return None
                 
@@ -152,7 +152,7 @@ class HDGMM():
             # Return the class membership and some parameters of the optimization
             self.LL = LL
             self.bic = 2*LL[-1] - self.q*sp.log(n)
-            self.icl = self.bic + 2*(T*sp.log(T+EPS)).sum()
+            self.icl = self.bic + 2*(T*sp.log(T)).sum()
             self.niter = ITER + 1
            
             return sp.argmax(T)+1 
@@ -410,13 +410,12 @@ class HDGMM():
             
         if K is not None:
             T = -0.5*K            
-           
-        T[T>E_MAX] = E_MAX
+
+        # Check fo numerical stability : remove to high/low values
+        T[T>E_MAX],T[T<-E_MAX] = E_MAX,-E_MAX
+        
         sp.exp(T,out=T) # No need to take 0.5
-        Ts = T.sum(axis=1).reshape(n,1)
-        # Numerical presicion is handle later in the E-step
-        with sp.errstate(invalid='ignore'):
-            T /= Ts
+        T /= T.sum(axis=1).reshape(n,1)
         return T
         
     def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0):

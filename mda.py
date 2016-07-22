@@ -38,13 +38,14 @@ class MDA():
         self.prop = [float(j_.size)/n for j_ in self.j]
 
         # Learn each class mixture
-        # self.model = Parallel(n_jobs=1)(delayed(workerMda)(x[j_,:],MODEL,th,C) for j_ in self.j)
+        self.model = Parallel(n_jobs=-1)(delayed(workerMda)(x[j_,:],MODEL,th,C) for j_ in self.j)
 
-        for j_ in self.j:
-            self.model.append(workerMda(x[j_,:],MODEL,th,C))        
+        # for j_ in self.j:
+        #     self.model.append(workerMda(x[j_,:],MODEL,th,C))     
+            
 
-        # Free j
-        self.j = []
+        # # Free j
+        # self.j = []
         
 
     def predict(self,xt):
@@ -58,7 +59,7 @@ class MDA():
         # Compute the posterior
             K = self.model[c].predict(xt,out='ki')
             K *= (-0.5)
-            K[K>HDDA.E_MAX] = HDDA.E_MAX
+            K[K>HDDA.E_MAX],K[K<-HDDA.E_MAX] = HDDA.E_MAX,-HDDA.E_MAX # Numerical stability
             sp.exp(K,out=K)
             P[:,c]=self.prop[c]*K.sum(axis=1)
         
@@ -101,3 +102,4 @@ class MDA():
         self.Kappa = Kappa
         # Learn model with optimal parameter
         self.fit(x,y,MODEL=MODEL,th=self.th,C=C)
+u
