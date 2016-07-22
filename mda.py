@@ -5,14 +5,16 @@ from sklearn.metrics import confusion_matrix
 from joblib import Parallel, delayed
 import hdda as HDDA
 
+# TODO: propager le random state partout
+# TODO: Test l'apprentissage HDDA pour chaque classe, si cela n'a pas convergé (niter == 1 ou bic == MIN ), il faut reprendre!
+# TODO: Dans HDDA, il faut gérer proprepement lorsque exp(-ll) ne pase pas
+
 ## Worker function for MDA
-def workerMda(x,MODEL,th,C):
+def workerMda(x,MODEL,th,C,random_state=0):
     """
     """
-    model = HDGMM()
-    model.bic = HDDA.MIN
-    model.fit_all(x,MODEL=MODEL,th=th,C=C,random_state=iter)
-    iter+=1
+    model = HDDA.HDGMM()
+    model.fit_all(x,MODEL=MODEL,th=th,C=C,random_state=random_state)
     return model
 
 class MDA():
@@ -36,8 +38,13 @@ class MDA():
         self.prop = [float(j_.size)/n for j_ in self.j]
 
         # Learn each class mixture
-        self.model = Parallel(n_jobs=4)(delayed(workerMda)(x[j_,:],MODEL,th,C) for j_ in self.j) # TODO: tester si cela n'a pas convergé -> il faut relancer !!
+        # self.model = Parallel(n_jobs=1)(delayed(workerMda)(x[j_,:],MODEL,th,C) for j_ in self.j)
 
+        for j_ in self.j:
+            self.model.append(workerMda(x[j_,:],MODEL,th,C))        
+
+        # Free j
+        self.j = []
         
 
     def predict(self,xt):
@@ -82,9 +89,9 @@ class MDA():
 
         for train,test in KF:
             for i,th_ in enumerate(th):# TODO: Change model to mda
-                model = MDA()
-                model.fit(x[train,:],y[train],MODEL=MODEL,th=[th_],C=C)
-                yp = model.predict(x[test,:])
+                mda = MDA()
+                mda.fit(x[train,:],y[train],MODEL=MODEL,th=[th_],C=C)
+                yp = mda.predict(x[test,:])
                 confu = confusion_matrix(y[test],yp)
                 Kappa[i] += get_kappa(confu)
                 
