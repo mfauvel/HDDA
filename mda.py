@@ -5,9 +5,7 @@ from sklearn.metrics import confusion_matrix
 from joblib import Parallel, delayed
 import hdda as HDDA
 
-# TODO: propager le random state partout
 # TODO: Test l'apprentissage HDDA pour chaque classe, si cela n'a pas convergé (niter == 1 ou bic == MIN ), il faut reprendre!
-# TODO: Dans HDDA, il faut gérer proprepement lorsque exp(-ll) ne pase pas
 
 ## Worker function for MDA
 def workerMda(x,MODEL,th,C,random_state=0):
@@ -25,7 +23,7 @@ class MDA():
         self.prop = []
         self.j = []
 
-    def fit(self,x,y,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.1], C = [1,2,3,4,5,6]):
+    def fit(self,x,y,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.1], C = [1,2,3,4,5,6],random_state=0):
         """
         """
         n,d = x.shape
@@ -37,16 +35,11 @@ class MDA():
         # Get the proportion of each class
         self.prop = [float(j_.size)/n for j_ in self.j]
 
-        # Learn each class mixture
-        self.model = Parallel(n_jobs=-1)(delayed(workerMda)(x[j_,:],MODEL,th,C) for j_ in self.j)
+        # # Learn each class mixture
+        # self.model = Parallel(n_jobs=-1)(delayed(workerMda)(x[j_,:],MODEL,th,C) for j_ in self.j)
 
-        # for j_ in self.j:
-        #     self.model.append(workerMda(x[j_,:],MODEL,th,C))     
-            
-
-        # # Free j
-        # self.j = []
-        
+        for j_ in self.j:
+            self.model.append(workerMda(x[j_,:],MODEL,th,C,random_state=random_state))         
 
     def predict(self,xt):
         """
@@ -102,4 +95,3 @@ class MDA():
         self.Kappa = Kappa
         # Learn model with optimal parameter
         self.fit(x,y,MODEL=MODEL,th=self.th,C=C)
-u
