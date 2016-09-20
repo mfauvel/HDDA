@@ -152,7 +152,9 @@ class HDGMM():
             # Return the class membership and some parameters of the optimization
             self.LL = LL
             self.bic = 2*LL[-1] - self.q*sp.log(n)
-            self.icl = self.bic + 2*(T*sp.log(T)).sum()
+            Z = sp.zeros_like(T)
+            Z[T.argmax(axis=1)]=1
+            self.icl = self.bic + 2*(Z*sp.log(T)).sum()
             self.niter = ITER + 1
            
             return sp.argmax(T)+1 
@@ -418,7 +420,7 @@ class HDGMM():
         T /= T.sum(axis=1).reshape(n,1)
         return T
         
-    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0):
+    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='bic'):
         """
         This  method fits  all the  model given the  parameter th  and the
         number of class  C, and return the best model  in terms of the
@@ -426,7 +428,7 @@ class HDGMM():
         """
         nmod,nC,nt = len(MODEL),len(C),len(th)
         
-        BIC= sp.zeros((nmod,nC,nt))
+        CRIT = sp.zeros((nmod,nC,nt))
         param = {'init':'user','tol':0.00001,'random_state':random_state}
         for i,c_ in enumerate(C):
             param['C']=c_
@@ -435,7 +437,7 @@ class HDGMM():
             # Check for minimal size of cluster
             nc = sp.asarray([len(sp.where(yi==i_)[0]) for i_ in xrange(param['C'])])
             if sp.any(nc<2):
-                BIC[:,i,:] = MIN
+                CRIT [:,i,:] = MIN
             else:
                 yi+=1
                 for m,model_ in enumerate(MODEL): # Loop over the models
@@ -443,18 +445,21 @@ class HDGMM():
                         param['th']=th_
                         model = HDGMM(model=model_)
                         model.fit(x,param=param,yi=yi)
-                        BIC[m,i,j]=model.bic              
+                        if criteria  is 'bic':
+                            CRIT [m,i,j]=model.bic
+                        elif criteria  is 'icl':
+                            CRIT [m,i,j]=model.icl # model.bic
 
         if VERBOSE:
-            print("Models \t C \t th \t BIC")
+            print("Models \t C \t th \t {0} ".format(criteria))
             for m in xrange(len(MODEL)):
-                t = sp.where(BIC[m,:,:]==BIC[m,:,:].max())
-                print MODEL[m] + " \t " + str(C[t[0][0]]) + " \t " + str(th[t[1][0]])  + " \t " + str(BIC[m,:,:].max())
+                t = sp.where(CRIT [m,:,:]==CRIT [m,:,:].max())
+                print MODEL[m] + " \t " + str(C[t[0][0]]) + " \t " + str(th[t[1][0]])  + " \t " + str(CRIT [m,:,:].max())
 
-            t = sp.where(BIC==BIC.max())
+            t = sp.where(CRIT ==CRIT .max())
             print ("\nBest model is {}".format(MODEL[t[0][0]]))
         else:
-            t = sp.where(BIC==BIC.max())
+            t = sp.where(CRIT ==CRIT .max())
 
         ## Return the best model
         param['init']='kmeans'

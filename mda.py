@@ -60,7 +60,7 @@ class MDA():
         yp = sp.argmax(P,1)+1
         return yp
     
-    def cross_validation(self,x,y,th,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],C=[1,2,3,4,5,6],v=5,random_state=0):
+    def cross_validation(self,x,y,th=[0.01,0.05,0.1,0.2],MODEL=['M1'],C=[1,2,3,4,5,6,7,8],v=5,random_state=0):
         """
         """
         def get_kappa(confu):
@@ -81,10 +81,11 @@ class MDA():
         KF = StratifiedKFold(y.reshape(y.size,),v,random_state=random_state)
         Kappa = sp.zeros((nth,))
 
+        ## Learn for each fold
         for train,test in KF:
-            for i,th_ in enumerate(th):# TODO: Change model to mda
+            for i,th_ in enumerate(th):
                 mda = MDA()
-                mda.fit(x[train,:],y[train],MODEL=MODEL,th=[th_],C=C)
+                mda.fit(x[train,:],y[train],MODEL=MODEL,th=[th_],C=C,random_state=0)
                 yp = mda.predict(x[test,:])
                 confu = confusion_matrix(y[test],yp)
                 Kappa[i] += get_kappa(confu)
