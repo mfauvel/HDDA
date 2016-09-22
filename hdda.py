@@ -152,9 +152,7 @@ class HDGMM():
             # Return the class membership and some parameters of the optimization
             self.LL = LL
             self.bic = 2*LL[-1] - self.q*sp.log(n)
-            Z = sp.zeros_like(T)
-            Z[T.argmax(axis=1)]=1
-            self.icl = self.bic + 2*(Z*sp.log(T+EPS)).sum() # Add small constant to prevent numerical issues
+            self.icl = self.bic + 2*sp.log(T.max(axis=1)+EPS).sum() # Add small constant to prevent numerical issues
             self.niter = ITER + 1
            
             return sp.argmax(T)+1 
