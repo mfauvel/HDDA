@@ -154,7 +154,7 @@ class HDGMM():
             self.bic = 2*LL[-1] - self.q*sp.log(n)
             Z = sp.zeros_like(T)
             Z[T.argmax(axis=1)]=1
-            self.icl = self.bic + 2*(Z*sp.log(T)).sum()
+            self.icl = self.bic + 2*(Z*sp.log(T+EPS)).sum() # Add small constant to prevent numerical issues
             self.niter = ITER + 1
            
             return sp.argmax(T)+1 
@@ -420,7 +420,7 @@ class HDGMM():
         T /= T.sum(axis=1).reshape(n,1)
         return T
         
-    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='bic'):
+    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='icl'):
         """
         This  method fits  all the  model given the  parameter th  and the
         number of class  C, and return the best model  in terms of the
