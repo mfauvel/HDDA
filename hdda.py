@@ -96,13 +96,13 @@ class HDGMM():
                 param[key]=value
                 
         # If unsupervised case
-        if y is None: # Initialisation of the class membership
+        if y == None: # Initialisation of the class membership
             EM,ITER,ITERMAX,TOL,LL = True,0,param['itermax'],param['tol'],[]
             if param['C'] == 1:
                 y = sp.ones((n,1))
             else:
                 init = param['init']
-                if init is 'kmeans':
+                if init == 'kmeans':
                     y = KMeans(n_clusters=param['C'],n_init=5,n_jobs=1,random_state=param['random_state']).fit_predict(x)
                     # Check for minimal size of cluster
                     nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
@@ -111,10 +111,10 @@ class HDGMM():
                         return None
                     else:
                         y += 1 # Label starts at one
-                elif init is 'random':
+                elif init == 'random':
                     sp.random.seed(param['random_state'])
                     y = sp.random.randint(1,high=param['C']+1,size=n)
-                elif init is 'user':
+                elif init == 'user':
                     if param['C'] != yi.max():
                         print "The number of class does not match is param['C'] and yi"                    
                     y = yi
@@ -125,7 +125,7 @@ class HDGMM():
         self.fit_init(x,y)
         self.fit_update(param)
 
-        if EM is True: # Unsupervised case, needs iteration
+        if EM == True: # Unsupervised case, needs iteration
             ll,T = self.loglike(x)
             LL.append(ll)
             while(ITER<ITERMAX):
@@ -329,15 +329,15 @@ class HDGMM():
             K[:,c] += sp.sum((xtc - Px)**2,axis=1)/self.b[c]
             
         ## Assign the label to the minimum value of K 
-        if out is None:
+        if out == None:
             yp = sp.argmin(K,1)+1
             return yp
-        elif out is 'proba':
+        elif out == 'proba':
             for c in xrange(C):
                 K[:,c] += 2*sp.log(self.prop[c])
             K *= -0.5
             return yp,K
-        elif out is 'ki':
+        elif out == 'ki':
             return K
 
     # def CV(self,x,y,param,v=5,seed=0):
@@ -404,11 +404,11 @@ class HDGMM():
         :param k: A n \times c matrix containing the decision function (obtained with predict)
         """
         n = T.shape[0]
-        if K is None and T is None:
+        if K == None and T == None:
             print "At least one of K or T should be not None"
             exit()
             
-        if K is not None:
+        if K != None:
             T = -0.5*K            
 
         # Check fo numerical stability : remove to high/low values
@@ -418,7 +418,7 @@ class HDGMM():
         T /= T.sum(axis=1).reshape(n,1)
         return T
         
-    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='icl'):
+    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='bic'):
         """
         This  method fits  all the  model given the  parameter th  and the
         number of class  C, and return the best model  in terms of the
@@ -443,9 +443,9 @@ class HDGMM():
                         param['th']=th_
                         model = HDGMM(model=model_)
                         model.fit(x,param=param,yi=yi)
-                        if criteria  is 'bic':
+                        if criteria  == 'bic':
                             CRIT [m,i,j]=model.bic
-                        elif criteria  is 'icl':
+                        elif criteria  == 'icl':
                             CRIT [m,i,j]=model.icl # model.bic
 
         if VERBOSE:
