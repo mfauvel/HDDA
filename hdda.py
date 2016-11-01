@@ -3,6 +3,10 @@ import scipy as sp
 from scipy import linalg
 from sklearn.cluster import KMeans
 
+# TODO: add test for the computation of W OK
+# TODO: clear X when not used OK
+# TODO: clean the output of predict when out=proba, add the posterior probabilities
+
 ## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
 MIN = sp.finfo(sp.float64).min
@@ -121,6 +125,7 @@ class HDGMM():
                 else:
                     print "Initialization should be kmeans or random or user"
                     return None
+
         # Initialization of the parameter
         self.fit_init(x,y)
         self.fit_update(param)
@@ -178,12 +183,13 @@ class HDGMM():
             exit()
             
         ## Compute the whole covariance matrix
-        X = (x - sp.mean(x,axis=0))/sp.sqrt(float(n))
-        if n >= d:
-            self.W = sp.dot(X.T,X)
-        else:
-            self.W = sp.dot(X,X.T)
-        X = None
+        if self.model in ('M2','M4','M6','M8'):
+            X = (x - sp.mean(x,axis=0))/sp.sqrt(float(n))
+            if n >= d:
+                self.W = sp.dot(X.T,X)
+            else:
+                self.W = sp.dot(X,X.T)
+            X = None
         
         ## Learn the empirical of the model for each class
         for c in xrange(C):
@@ -206,6 +212,7 @@ class HDGMM():
                 cov = sp.dot(X,X.T)
                 self.X.append(X)
 
+            X = None
             L,Q = linalg.eigh(cov)
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
@@ -339,6 +346,14 @@ class HDGMM():
             return yp,K
         elif out == 'ki':
             return K
+        elif out == 'post':
+            for c in xrange(C):
+                K[:,c] += 2*sp.log(self.prop[c])
+            K *= -0.5
+            K[K>E_MAX],K[K<-E_MAX] = E_MAX,-E_MAX
+            sp.exp(K,out=K)
+            K /= K.sum(axis=1).reshape(nt,1)
+            return K
 
     # def CV(self,x,y,param,v=5,seed=0):
     #     """
@@ -403,7 +418,6 @@ class HDGMM():
         """Compute the posterior probability given the membership function
         :param k: A n \times c matrix containing the decision function (obtained with predict)
         """
-        n = T.shape[0]
         if K == None and T == None:
             print "At least one of K or T should be not None"
             exit()
@@ -411,6 +425,7 @@ class HDGMM():
         if K != None:
             T = -0.5*K            
 
+        n = T.shape[0]
         # Check fo numerical stability : remove to high/low values
         T[T>E_MAX],T[T<-E_MAX] = E_MAX,-E_MAX
         
@@ -418,7 +433,7 @@ class HDGMM():
         T /= T.sum(axis=1).reshape(n,1)
         return T
         
-    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='bic'):
+    def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='icl'):
         """
         This  method fits  all the  model given the  parameter th  and the
         number of class  C, and return the best model  in terms of the
