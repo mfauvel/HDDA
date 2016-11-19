@@ -48,7 +48,11 @@ class HDGMM():
         self.a = []           # Eigenvalues of signal subspaces
         self.b = []           # Values of the noise
         self.logdet = []      # Pre-computation of the logdet of covariance matrices using HDDA models
-        self.model=model      # Name of the model
+        if model in ('M1','M2','M3','M4','M5','M6','M7','M8'):
+            self.model=model      # Name of the model
+        else:
+            print "Model parameter {} is not available".format(model)
+            exit()
         self.q = []           # Number of parameters of the full models
         self.bic = []         # bic values of the model
         self.icl = []         # icl values of the model
@@ -149,7 +153,7 @@ class HDGMM():
                 # Compute the BIC and do the E step
                 ll,T=self.loglike(x)
                 LL.append(ll)
-                if abs(LL[-1]-LL[-2]) < TOL:
+                if abs(LL[-1]-LL[-2])/LL[-2] < TOL:
                     break
                 else:
                     ITER += 1
@@ -412,8 +416,8 @@ class HDGMM():
         K *= (-0.5)
         Km = K.max(axis=1).reshape(n,1)
         LL = (sp.log(sp.exp(K-Km).sum(axis=1)).reshape(n,1)+Km).sum()
-        return LL,self.posterior(T=K) # we don't modify K since in the posterior it will be used as it
-
+        return LL,self.posterior(T=K) # we don't modify K since in the posterior it will be used "as it"
+    
     def posterior(self,K=None,T=None):
         """Compute the posterior probability given the membership function
         :param k: A n \times c matrix containing the decision function (obtained with predict)
