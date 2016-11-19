@@ -153,7 +153,7 @@ class HDGMM():
                 # Compute the BIC and do the E step
                 ll,T=self.loglike(x)
                 LL.append(ll)
-                if abs(LL[-1]-LL[-2])/LL[-2] < TOL:
+                if abs((LL[-1]-LL[-2])/LL[-2]) < TOL:
                     break
                 else:
                     ITER += 1
