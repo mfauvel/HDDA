@@ -3,9 +3,9 @@ import scipy as sp
 from scipy import linalg
 from sklearn.cluster import KMeans
 
-# TODO: add test for the computation of W OK
-# TODO: clear X when not used OK
 # TODO: clean the output of predict when out=proba, add the posterior probabilities
+# TODO: Work on ni rather than n for selected the number of eigenvalues -> needs to re-define check for the values of pi
+# TODO: Work on return values for checking errors
 
 ## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -111,12 +111,12 @@ class HDGMM():
             else:
                 init = param['init']
                 if init == 'kmeans':
-                    y = KMeans(n_clusters=param['C'],n_init=5,n_jobs=1,random_state=param['random_state']).fit_predict(x)
+                    y = KMeans(n_clusters=param['C'],n_init=5,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
                     # Check for minimal size of cluster
                     nc = sp.asarray([len(sp.where(y==i)[0]) for i in xrange(param['C'])])
                     if sp.any(nc<2):
                         self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
-                        return None
+                        return -1 # Kmeans failed
                     else:
                         y += 1 # Label starts at one
                 elif init == 'random':
@@ -128,7 +128,7 @@ class HDGMM():
                     y = yi
                 else:
                     print "Initialization should be kmeans or random or user"
-                    return None
+                    return - 2 # Bad init values
 
         # Initialization of the parameter
         self.fit_init(x,y)
@@ -143,7 +143,7 @@ class HDGMM():
                 # Check for empty classes
                 if sp.any(T.sum(axis=0)<param['population']): # If empty return infty bic
                     self.LL,self.bic,self.icl,self.niter = LL, MIN, MIN, (ITER+1)
-                    return None
+                    return - 3 # population empty
                 
                 # M step
                 self.free(full=True)
@@ -164,7 +164,7 @@ class HDGMM():
             self.icl = self.bic + 2*sp.log(T.max(axis=1)+EPS).sum() # Add small constant to prevent numerical issues
             self.niter = ITER + 1
            
-            return sp.argmax(T)+1 
+            return 1 
                 
     def fit_init(self,x,y):
         """This  function computes  the  empirical  estimators of  the  mean
@@ -246,11 +246,11 @@ class HDGMM():
             while sp.any(dL[p:]>th):
                 p += 1
             minDim = int(min(min(self.ni),d))
-            # Check if p >= ni-1 or d-1
+            # Check if (p >= ni-1 or d-1) and p > 0
             if p < minDim - 1 :
                 self.pi = [p for c in xrange(C)]
             else:
-                self.pi = [(minDim-2) for c in xrange(C)]
+                self.pi = [max((minDim-2),1) for c in xrange(C)]
                         
         elif self.model in ('M1','M3','M5','M7'): # For specific size subspace models
             for c in xrange(C):
@@ -260,15 +260,20 @@ class HDGMM():
                 while sp.any(dL[pi:]>th):
                     pi += 1
                 self.pi.append(pi)
-            # Check if pi >= ni-1 or d-1
-            self.pi = [sPI if sPI < int(min(sNI,d)-1) else int(min(sNI,d)-2) for sPI,sNI in zip(self.pi,self.ni)] 
+            # Check if (pi >= ni-1 or d-1) and pi > 0
+            self.pi = [sPI if sPI < int(min(sNI,d)-1) else max(int(min(sNI,d)-2),1) for sPI,sNI in zip(self.pi,self.ni)] 
 
 
 
         ## Estim signal part
         self.a = [sL[:sPI] for sL,sPI in zip(self.L,self.pi)]
         if self.model in ('M5','M6','M7','M8'):
-            self.a = [sp.repeat(sA[:].mean(),sA.size) for sA in self.a]
+            try:
+                self.a = [sp.repeat(sA[:].mean(),sA.size) for sA in self.a]
+            except Warning:
+                print self.pi
+                print self.ni
+                exit()
 
         ## Estim noise term
         if self.model in ('M1','M2','M5','M6'): # Noise free
@@ -450,7 +455,7 @@ class HDGMM():
         for i,c_ in enumerate(C):
             param['C']=c_
             # Kmeans initialization
-            yi = KMeans(n_clusters=param['C'],n_init=10,n_jobs=1,random_state=param['random_state']).fit_predict(x)
+            yi = KMeans(n_clusters=param['C'],n_init=10,n_jobs=-1,random_state=param['random_state']).fit_predict(x)
             # Check for minimal size of cluster
             nc = sp.asarray([len(sp.where(yi==i_)[0]) for i_ in xrange(param['C'])])
             if sp.any(nc<2):
