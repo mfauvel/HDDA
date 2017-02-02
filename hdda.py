@@ -2,12 +2,13 @@
 import scipy as sp
 from scipy import linalg
 from sklearn.cluster import KMeans
+from scipy.linalg.blas import dsyrk
 
 # TODO: clean the output of predict when out=proba, add the posterior probabilities
 # TODO: Work on ni rather than n for selected the number of eigenvalues -> needs to re-define check for the values of pi
 # TODO: Work on return values for checking errors
 # TODO: Check the prediction part
-# TODO: use blas function to compute the covariance matrices
+# TODO: Simplify the computation of the posterior
 
 ## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -190,11 +191,11 @@ class HDGMM():
             
         ## Compute the whole covariance matrix
         if self.model in ('M2','M4','M6','M8'):
-            X = (x - sp.mean(x,axis=0))/sp.sqrt(float(n))
-            if n >= d:
-                self.W = sp.dot(X.T,X)
+            X = (x - sp.mean(x,axis=0))
+            if n >= d: # Here use dsyrk to take benefit of the product matrices X^{t}X or XX^{t}
+                self.W = dsyrk(1.0/n,X.T,trans=False) # Transpose to put in fortran order
             else:
-                self.W = sp.dot(X,X.T)
+                self.W = dsyrk(1.0/n,X.T,trans=True) # Transpose to put in fortran order
             X = None
         
         ## Learn the empirical of the model for each class
@@ -204,22 +205,22 @@ class HDGMM():
                 self.ni.append(j.size)
                 self.prop.append(float(self.ni[c])/n)
                 self.mean.append(sp.mean(x[j,:],axis=0))
-                X = (x[j,:]-self.mean[c])/sp.sqrt(float(self.ni[c]))
+                X = (x[j,:]-self.mean[c])
 
             else: # Unsupervised case
                 self.ni.append(y[:,c].sum())
                 self.prop.append(float(self.ni[c])/n)
                 self.mean.append(sp.average(x,weights=y[:,c],axis=0))
-                X = (x-self.mean[c])*sp.sqrt(y[:,c]).reshape(n,1)/sp.sqrt(self.ni[c])
+                X = (x-self.mean[c])*sp.sqrt(y[:,c]).reshape(n,1)
 
-            if n >= d:
-                cov = sp.dot(X.T,X)
+            if n >= d: # Here use dsyrk to take benefit of the product matrices X^{t}X or XX^{t}
+                cov = dsyrk(1.0/(self.ni[c]-1),X.T,trans=False) # Transpose to put in fortran order
             else:
-                cov = sp.dot(X,X.T)
+                cov = dsyrk(1.0/(self.ni[c]-1),X.T,trans=True) # Transpose to put in fortran order
                 self.X.append(X)
 
             X = None
-            L,Q = linalg.eigh(cov)
+            L,Q = linalg.eigh(cov,lower=False) # Only the upper part of cov is initialize -> dsyrk
             idx = L.argsort()[::-1]
             L,Q = L[idx],Q[:,idx]
             L[L<EPS]=EPS # Chek for numerical errors
@@ -336,8 +337,8 @@ class HDGMM():
             # Remove the mean
             xtc = xt-self.mean[c]
             # Do the projection
-            Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T))
-            temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c]))
+            Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T)) ## BLAS
+            temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c])) ## BLAS
             K[:,c] += sp.sum(temp**2,axis=1)
             K[:,c] += sp.sum((xtc - Px)**2,axis=1)/self.b[c]
             
@@ -422,7 +423,7 @@ class HDGMM():
     
     def posterior(self,K=None,T=None):
         """Compute the posterior probability given the membership function
-        :param k: A n \times c matrix containing the decision function (obtained with predict)
+        :param K: A n \times c matrix containing the decision function (obtained with predict)
         """
         if K == None and T == None:
             print "At least one of K or T should be not None"
