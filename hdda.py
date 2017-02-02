@@ -6,6 +6,8 @@ from sklearn.cluster import KMeans
 # TODO: clean the output of predict when out=proba, add the posterior probabilities
 # TODO: Work on ni rather than n for selected the number of eigenvalues -> needs to re-define check for the values of pi
 # TODO: Work on return values for checking errors
+# TODO: Check the prediction part
+# TODO: use blas function to compute the covariance matrices
 
 ## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -268,12 +270,7 @@ class HDGMM():
         ## Estim signal part
         self.a = [sL[:sPI] for sL,sPI in zip(self.L,self.pi)]
         if self.model in ('M5','M6','M7','M8'):
-            try:
-                self.a = [sp.repeat(sA[:].mean(),sA.size) for sA in self.a]
-            except Warning:
-                print self.pi
-                print self.ni
-                exit()
+            self.a = [sp.repeat(sA[:].mean(),sA.size) for sA in self.a]
 
         ## Estim noise term
         if self.model in ('M1','M2','M5','M6'): # Noise free
@@ -356,8 +353,8 @@ class HDGMM():
         elif out == 'ki':
             return K
         elif out == 'post':
-            for c in xrange(C):
-                K[:,c] += 2*sp.log(self.prop[c])
+            # for c in xrange(C):
+            #     K[:,c] += 2*sp.log(self.prop[c])
             K *= -0.5
             K[K>E_MAX],K[K<-E_MAX] = E_MAX,-E_MAX
             sp.exp(K,out=K)
