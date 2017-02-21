@@ -8,7 +8,8 @@ from scipy.linalg.blas import dsyrk
 # TODO: Work on ni rather than n for selected the number of eigenvalues -> needs to re-define check for the values of pi
 # TODO: Work on return values for checking errors
 # TODO: Check the prediction part
-# TODO: Simplify the computation of the posterior
+# TODO: Add "d*sp.log(2*sp.pi)" as a constant of the method, at the initialization
+# TODO: Check modification in-place for T
 
 ## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -154,7 +155,7 @@ class HDGMM():
                 self.fit_update(param)
 
                 # Compute the BIC and do the E step
-                ll,T=self.loglike(x)
+                ll,T=self.loglike(x,T=T)
                 LL.append(ll)
                 if abs((LL[-1]-LL[-2])/LL[-2]) < TOL:
                     break
@@ -192,7 +193,7 @@ class HDGMM():
         ## Compute the whole covariance matrix
         if self.model in ('M2','M4','M6','M8'):
             X = (x - sp.mean(x,axis=0))
-            if n >= d: # Here use dsyrk to take benefit of the product matrices X^{t}X or XX^{t}
+            if n >= d: # Here use dsyrk to take benefit of the product symmetric matrices X^{t}X or XX^{t}
                 self.W = dsyrk(1.0/n,X.T,trans=False) # Transpose to put in fortran order
             else:
                 self.W = dsyrk(1.0/n,X.T,trans=True) # Transpose to put in fortran order
@@ -213,7 +214,7 @@ class HDGMM():
                 self.mean.append(sp.average(x,weights=y[:,c],axis=0))
                 X = (x-self.mean[c])*sp.sqrt(y[:,c]).reshape(n,1)
 
-            if n >= d: # Here use dsyrk to take benefit of the product matrices X^{t}X or XX^{t}
+            if n >= d: # Here use dsyrk to take benefit of the product of symmetric matrices X^{t}X or XX^{t}
                 cov = dsyrk(1.0/(self.ni[c]-1),X.T,trans=False) # Transpose to put in fortran order
             else:
                 cov = dsyrk(1.0/(self.ni[c]-1),X.T,trans=True) # Transpose to put in fortran order
@@ -240,7 +241,7 @@ class HDGMM():
 
         ## Estimation of the signal subspace
         if self.model in ('M2','M4','M6','M8'): # For common size subspace models
-            L = linalg.eigh(self.W,eigvals_only=True) # Compute intrinsic dimension on the whole data set
+            L = linalg.eigh(self.W,eigvals_only=True,lower=False) # Compute intrinsic dimension on the whole data set
             idx = L.argsort()[::-1]
             L = L[idx]
             L[L<EPS]=EPS # Chek for numerical errors
@@ -404,7 +405,7 @@ class HDGMM():
     #     # Select the value with the highest Kappa value
     #     ind = sp.argmax(Kappa)
     #     return param_grid[ind],Kappa[ind]
-    def loglike(self,x):
+    def loglike(self,x,T=None):
         """
         Compute the log likelyhood given a set of samples.
         :param x: The sample matrix, is of size x \times d where n is the number of samples and d is the number of variables
@@ -418,27 +419,36 @@ class HDGMM():
         ## Compute the Loglikelhood
         K *= (-0.5)
         Km = K.max(axis=1).reshape(n,1)
-        LL = (sp.log(sp.exp(K-Km).sum(axis=1)).reshape(n,1)+Km).sum()
-        return LL,self.posterior(T=K) # we don't modify K since in the posterior it will be used "as it"
-    
-    def posterior(self,K=None,T=None):
-        """Compute the posterior probability given the membership function
-        :param K: A n \times c matrix containing the decision function (obtained with predict)
-        """
-        if K == None and T == None:
-            print "At least one of K or T should be not None"
-            exit()
-            
-        if K != None:
-            T = -0.5*K            
+        LL = (sp.log(sp.exp(K-Km).sum(axis=1)).reshape(n,1)+Km).sum() # logsumexp trick
 
-        n = T.shape[0]
-        # Check fo numerical stability : remove to high/low values
-        T[T>E_MAX],T[T<-E_MAX] = E_MAX,-E_MAX
+        ## Compute the posterior
+        if T is None:
+            T = sp.empty_like(K)
+
+        with sp.errstate(over='ignore'):
+            for i in xrange(K.shape[1]):
+                T[:,i] = 1 / sp.exp(K-K[:,i][:,sp.newaxis]).sum(axis=1)
+    
+        return LL, T
+    
+    # def posterior(self,K=None,T=None):
+    #     """Compute the posterior probability given the membership function
+    #     :param K: A n \times c matrix containing the decision function (obtained with predict)
+    #     """
+    #     if K == None and T == None:
+    #         print "At least one of K or T should be not None"
+    #         exit()
+            
+    #     if K != None:
+    #         T = -0.5*K            
+
+    #     n = T.shape[0]
+    #     # Check fo numerical stability : remove to high/low values NOT SO GOOD -> to be modified
+    #     T[T>E_MAX],T[T<-E_MAX] = E_MAX,-E_MAX
         
-        sp.exp(T,out=T) # No need to take 0.5
-        T /= T.sum(axis=1).reshape(n,1)
-        return T
+    #     sp.exp(T,out=T) # No need to take 0.5
+    #     T /= T.sum(axis=1).reshape(n,1)
+    #     return T
         
     def fit_all(self,x,MODEL=['M1','M2','M3','M4','M5','M6','M7','M8'],th=[0.0001,0.0005,0.001,0.005,0.01,0.05,0.1,0.2,0.3],C = [1,2,3,4,5,6,7,8],VERBOSE=False,random_state=0,criteria='icl'):
         """
