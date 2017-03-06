@@ -2,7 +2,7 @@
 import scipy as sp
 from scipy import linalg
 from sklearn.cluster import KMeans
-from scipy.linalg.blas import dsyrk
+from scipy.linalg.blas import dsyrk,dsymm
 
 # TODO: clean the output of predict when out=proba, add the posterior probabilities
 # TODO: Work on ni rather than n for selected the number of eigenvalues -> needs to re-define check for the values of pi
@@ -155,7 +155,7 @@ class HDGMM():
                 self.fit_update(param)
 
                 # Compute the BIC and do the E step
-                ll,T=self.loglike(x,T=T)
+                ll = self.loglike(x,T=T)
                 LL.append(ll)
                 if abs((LL[-1]-LL[-2])/LL[-2]) < TOL:
                     break
@@ -189,7 +189,10 @@ class HDGMM():
         if n != y.shape[0]:
             print("size of x and y should match")
             exit()
-            
+
+        ## Compute constant
+        self.cst = d*sp.log(2*sp.pi)
+        
         ## Compute the whole covariance matrix
         if self.model in ('M2','M4','M6','M8'):
             X = (x - sp.mean(x,axis=0))
@@ -334,12 +337,12 @@ class HDGMM():
         ## Start the prediction for each class
         for c in xrange(C):
             # Compute the constant term
-            K[:,c] = self.logdet[c] - 2*sp.log(self.prop[c]) + d*sp.log(2*sp.pi)
+            K[:,c] = self.logdet[c] - 2*sp.log(self.prop[c]) + self.cst
             # Remove the mean
             xtc = xt-self.mean[c]
             # Do the projection
-            Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T)) ## BLAS
-            temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c])) ## BLAS
+            Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T)) ## BLAS dsyrk for "sp.dot(self.Q[c],self.Q[c].T)" and dsymm for PX
+            temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c])) 
             K[:,c] += sp.sum(temp**2,axis=1)
             K[:,c] += sp.sum((xtc - Px)**2,axis=1)/self.b[c]
             
@@ -410,9 +413,10 @@ class HDGMM():
         Compute the log likelyhood given a set of samples.
         :param x: The sample matrix, is of size x \times d where n is the number of samples and d is the number of variables
         """
+        flag = False
         ## Get some parameters
         n = x.shape[0]
-
+        
         ## Compute the membership function
         K = self.predict(x,out='ki')
 
@@ -423,13 +427,17 @@ class HDGMM():
 
         ## Compute the posterior
         if T is None:
+            flag = True
             T = sp.empty_like(K)
 
         with sp.errstate(over='ignore'):
             for i in xrange(K.shape[1]):
                 T[:,i] = 1 / sp.exp(K-K[:,i][:,sp.newaxis]).sum(axis=1)
-    
-        return LL, T
+
+        if flag:
+            return LL, T
+        else:
+            return LL
     
     # def posterior(self,K=None,T=None):
     #     """Compute the posterior probability given the membership function
