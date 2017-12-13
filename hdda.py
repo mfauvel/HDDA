@@ -2,14 +2,12 @@
 import scipy as sp
 from scipy import linalg
 from sklearn.cluster import KMeans
-from scipy.linalg.blas import dsyrk,dsymm
+from scipy.linalg.blas import dsyrk
 
 # TODO: clean the output of predict when out=proba, add the posterior probabilities
 # TODO: Work on ni rather than n for selected the number of eigenvalues -> needs to re-define check for the values of pi
 # TODO: Work on return values for checking errors
 # TODO: Check the prediction part
-# TODO: Add "d*sp.log(2*sp.pi)" as a constant of the method, at the initialization
-# TODO: Check modification in-place for T
 
 ## Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -341,7 +339,7 @@ class HDGMM():
             # Remove the mean
             xtc = xt-self.mean[c]
             # Do the projection
-            Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T)) ## BLAS dsyrk for "sp.dot(self.Q[c],self.Q[c].T)" and dsymm for PX
+            Px = sp.dot(xtc,sp.dot(self.Q[c],self.Q[c].T)) ## BLAS dsyrk for "sp.dot(self.Q[c],self.Q[c].T)" and dsymm for PX -- Not working DSYMM not faster !
             temp = sp.dot(Px,self.Q[c]/sp.sqrt(self.a[c])) 
             K[:,c] += sp.sum(temp**2,axis=1)
             K[:,c] += sp.sum((xtc - Px)**2,axis=1)/self.b[c]
