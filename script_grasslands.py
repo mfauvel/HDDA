@@ -14,12 +14,12 @@ th = [0.05,0.1,0.2]
 C = sp.arange(1,5)
 
 # Model Selection
-model = hdda.HDGMM()
+model = hdda.HDDC(C=4, th=0.1, model='M4')
 tic = time.clock()
-model.fit_all(x,MODEL=MODEL,C=C,th=th,VERBOSE=True)
+model.fit(x)
 toc = time.clock()
 print "Processing time: {}".format(toc-tic)
-
+print(model.niter)
 # Plot data
 bands= ['B','G','R','NIR']
 
