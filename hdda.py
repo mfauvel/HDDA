@@ -95,7 +95,7 @@ class HDDC():
         LL = []
         ITER = 0
         if self.C == 1:
-            label = sp.ones((n, 1))
+            self.T = sp.ones((n, 1))
         else:
             if self.init == 'kmeans':
                 label = KMeans(n_clusters=self.C,
@@ -121,9 +121,9 @@ class HDDC():
                 print("Initialization should be kmeans or random or user")
                 return - 2  # Bad init values
 
-        # Convert Y to T
-        self.T = sp.zeros((n, self.C))
-        self.T[sp.arange(n), label-1] = 1
+            # Convert label to membership
+            self.T = sp.zeros((n, self.C))
+            self.T[sp.arange(n), label-1] = 1
 
         # Initialization of the parameter
         self.m_step(X)
