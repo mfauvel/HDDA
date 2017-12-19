@@ -134,7 +134,7 @@ class HDDC():
         # Main while loop
         while(ITER < self.itermax):
             # M step
-            self.free(full=True)
+            self.free()
             self.m_step(X)
 
             # E step
@@ -438,12 +438,10 @@ class HDDC():
         """
         return self.score_samples(X).argmin(axis=1) + 1
 
-    def free(self, full=False):
-        """This  function free some  parameters of the  model. It is  used to
-        speed-up the cross validation process.
+    def free(self):
+        """This  function free some  parameters of the  model.
 
-        :param full: To free only the parcimonious part or all the model
-        :type full: bool
+        Use in the EM algorithm
         """
         self.pi = []
         self.a = []
@@ -451,13 +449,12 @@ class HDDC():
         self.logdet = []
         self.q = []
 
-        if full:
-            self.ni = []          # Number of samples of each class
-            self.prop = []        # Proportion of each class
-            self.mean = []        # Mean vector
-            self.pi = []            # Signal subspace size
-            self.L = []           # Eigenvalues of covariance matrices
-            self.Q = []
-            self.trace = []
-            self.X = []
-            self.W = None
+        self.ni = []          # Number of samples of each class
+        self.prop = []        # Proportion of each class
+        self.mean = []        # Mean vector
+        self.pi = []            # Signal subspace size
+        self.L = []           # Eigenvalues of covariance matrices
+        self.Q = []
+        self.trace = []
+        self.X = []
+        self.W = None
