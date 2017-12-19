@@ -4,15 +4,9 @@ from scipy import linalg
 from sklearn.cluster import KMeans
 from scipy.linalg.blas import dsyrk
 
-
-# TODO: clean the output of predict when out=proba,  add the posterior probabilities
-# TODO: Work on ni rather than n for selected the number of eigenvalues -> needs to re-define check for the values of pi
-# TODO: Work on return values for checking errors
 # TODO: Add check_array function for fit and predict function (in particular score=bic)
 # TODO: Change name of functions to match "APIs of scikit-learn objects"
 # TODO: Define get_param and set_param function
-# TODO: Empty classes
-# TODO: Manage memory errors for T and K
 # TODO: update score, score_samples and predict to match scikit
 
 # Numerical precision - Some constant
