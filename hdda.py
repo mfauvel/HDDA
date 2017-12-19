@@ -12,6 +12,8 @@ from scipy.linalg.blas import dsyrk
 # TODO: Change name of functions to match "APIs of scikit-learn objects"
 # TODO: Define get_param and set_param function
 # TODO: Empty classes
+# TODO: Manage memory errors for T and K
+# TODO: update score, score_samples and predict to match scikit
 
 # Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -29,7 +31,8 @@ class HDDC():
 
     def __init__(self, model='M1', th=0.1, init='kmeans',
                  itermax=100, tol=0.001, C=4,
-                 population=2, random_state=None):
+                 population=None, random_state=None,
+                 check_empty=None):
         """
         This function initialize the HDDA stucture
         :param model: the model used.
@@ -55,6 +58,8 @@ class HDDC():
         self.C = C
         self.population = population
         self.random_state = random_state
+        self.check_empty = check_empty  # Check for empty classes
+        self.C_ = [C]  # List of clusters number w.r.t iterations
 
         self.ni = []  # Number of samples of each class
         self.prop = []  # Proportion of each class
@@ -73,6 +78,7 @@ class HDDC():
             exit()
         self.q = []           # Number of parameters of the full models
         self.bic = []         # bic values of the model
+        self.aic = []         # aic values of the model
         self.icl = []         # icl values of the model
         self.niter = None     # Number of iterations
         self.X = []           # Matrix to project samples when n<d
@@ -94,6 +100,15 @@ class HDDC():
         n, d = X.shape
         LL = []
         ITER = 0
+
+        # Set minimum clusters size
+        # Rule of dumbs for minimal size pi = 1 :
+        # one mean vector (d) + one eigenvalues/vectors (1 + d)
+        # + noise term (1) ~ 2(d+1)
+        if self.population is None:
+            self.population = 2*(d+1)
+
+        # Initialization of the clustering
         if self.C == 1:
             self.T = sp.ones((n, 1))
         else:
@@ -101,15 +116,7 @@ class HDDC():
                 label = KMeans(n_clusters=self.C,
                                n_init=1, n_jobs=-1,
                                random_state=self.random_state).fit(X).labels_
-                # Check for minimal size of cluster
-                nc = sp.asarray([len(sp.where(label == i)[0])
-                                 for i in xrange(self.C)])
-                if sp.any(nc < 2):
-                    self.LL, self.bic, self.icl, self.niter \
-                        = LL, MIN, MIN, (ITER+1)
-                    return -1  # Kmeans failed
-                else:
-                    label += 1  # Label starts at one
+                label += 1  # Label starts at one
             elif self.init == 'random':
                 sp.random.seed(self.random_state)
                 label = sp.random.randint(1, high=self.C+1, size=n)
@@ -127,34 +134,31 @@ class HDDC():
 
         # Initialization of the parameter
         self.m_step(X)
-        ll = self.loglike(X)
+        ll = self.e_step(X)
         LL.append(ll)
+
+        # Main while loop
         while(ITER < self.itermax):
-            # E step - Use the precomputed T
-
-            # Check for empty classes
-            if sp.any(self.T.sum(axis=0) < self.population):
-                self.LL, self.bic, self.icl, self.niter\
-                    = LL, MIN, MIN, (ITER+1)
-                return - 3  # population empty
-
             # M step
             self.free(full=True)
             self.m_step(X)
 
-            # Compute the BIC and do the E step - update T
-            ll = self.loglike(X)
+            # E step
+            ll = self.e_step(X)
+
             LL.append(ll)
-            if abs((LL[-1]-LL[-2])/LL[-2]) < self.tol:
+            if (abs((LL[-1]-LL[-2])/LL[-2]) < self.tol) and \
+               (self.C_[-2] == self.C_[-1]):
                 break
             else:
                 ITER += 1
 
         # Return the class membership and some parameters of the optimization
         self.LL = LL
-        self.bic = 2*LL[-1] - self.q*sp.log(n)
+        self.bic = - 2*LL[-1] + self.q*sp.log(n)
+        self.aic = - 2*LL[-1] + 2*self.q
         # Add small constant to prevent numerical issues
-        self.icl = self.bic + 2*sp.log(self.T.max(axis=1)+EPS).sum()
+        self.icl = self.bic - 2*sp.log(self.T.max(axis=1)+EPS).sum()
         self.niter = ITER + 1
 
         return self
@@ -187,30 +191,47 @@ class HDDC():
             X_ = None
 
         # Learn the model for each class
+        C_ = self.C
+        c_delete = []
         for c in xrange(self.C):
-            self.ni.append(self.T[:, c].sum())
-            self.prop.append(float(self.ni[c])/n)
-            self.mean.append(sp.dot(self.T[:, c].T, X)/self.ni[c])
-            X_ = (X-self.mean[c])*(sp.sqrt(self.T[:, c])[:, sp.newaxis])
-
-            # Use dsyrk to take benefit of the product of symmetric matrices
-            if n >= d:
-                cov = dsyrk(1.0/(self.ni[c]-1), X_.T, trans=False)
+            ni = self.T[:, c].sum()
+            # Check if empty
+            if self.check_empty and \
+               ni < self.population:
+                C_ -= 1
+                c_delete.append(c)
             else:
-                cov = dsyrk(1.0/(self.ni[c]-1), X_.T, trans=True)
-                self.X.append(X_)
-            X_ = None
+                self.ni.append(ni)
+                self.prop.append(float(self.ni[-1])/n)
+                self.mean.append(sp.dot(self.T[:, c].T, X)/self.ni[-1])
+                X_ = (X-self.mean[-1])*(sp.sqrt(self.T[:, c])[:, sp.newaxis])
 
-            # Only the upper part of cov is initialize -> dsyrk
-            L, Q = linalg.eigh(cov, lower=False)
-            idx = L.argsort()[::-1]
-            L, Q = L[idx], Q[:, idx]
-            # Chek for numerical errors
-            L[L < EPS] = EPS
+                # Use dsyrk to take benefit of symmetric matrices
+                if n >= d:
+                    cov = dsyrk(1.0/(self.ni[-1]-1), X_.T, trans=False)
+                else:
+                    cov = dsyrk(1.0/(self.ni[-1]-1), X_.T, trans=True)
+                    self.X.append(X_)
+                X_ = None
 
-            self.L.append(L)
-            self.Q.append(Q)
-            self.trace.append(cov.trace())
+                # Only the upper part of cov is initialize -> dsyrk
+                L, Q = linalg.eigh(cov, lower=False)
+                idx = L.argsort()[::-1]
+                L, Q = L[idx], Q[:, idx]
+                # Chek for numerical errors
+                L[L < EPS] = EPS
+
+                self.L.append(L)
+                self.Q.append(Q)
+                self.trace.append(cov.trace())
+
+        # Update T
+        if c_delete:
+            self.T = sp.delete(self.T, c_delete, axis=1)
+
+        # Update the number of clusters
+        self.C_.append(C_)
+        self.C = C_
 
         # Estimation of the signal subspace
         # Common size subspace models
@@ -310,11 +331,52 @@ class HDDC():
         elif self.model in ('M7', 'M8'):
             self.q += self.C+1
 
-    def loglike(self, X):
+    def e_step(self, X):
+        """Compute the e-step of the algorithm
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_dimensions)
+            List of n_features-dimensional data points. Each row
+            corresponds to a single data point.
+        Returns
+        -------
+
         """
-        Compute the log likelyhood given a set of samples.
-        Update the belongship vector
-        :param X: The sample matrix,
+        # Get some parameters
+        n = X.shape[0]
+
+        # Compute the membership function
+        K = self.score_samples(X)
+
+        # Compute the Loglikelhood
+        K *= (-0.5)
+        Km = K.max(axis=1)
+        Km.shape = (n, 1)
+
+        # logsumexp trick
+        LL = (sp.log(sp.exp(K-Km).sum(axis=1))[:, sp.newaxis]+Km).sum()
+
+        # Compute the posterior
+        with sp.errstate(over='ignore'):
+            for c in xrange(self.C):
+                self.T[:, c] = 1 / sp.exp(K-K[:, c][:, sp.newaxis]).sum(axis=1)
+
+        return LL
+
+    def score(self, X):
+        """Compute the per-sample log-likelihood of the given data X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_dimensions)
+            List of n_features-dimensional data points. Each row
+            corresponds to a single data point.
+        Returns
+        -------
+        log_likelihood : float
+            Log likelihood of the Gaussian mixture given X.
+
         """
 
         # Get some parameters
@@ -330,21 +392,23 @@ class HDDC():
         # logsumexp trick
         LL = (sp.log(sp.exp(K-Km).sum(axis=1))[:, sp.newaxis]+Km).sum()
 
-        # Compute the posterior
-        with sp.errstate(over='ignore'):
-            for c in xrange(self.C):
-                self.T[:, c] = 1 / sp.exp(K-K[:, c][:, sp.newaxis]).sum(axis=1)
-
         return LL
 
-    def score_samples(self, Xt):
+    def score_samples(self, X):
+        """Compute the negative weighted log probabilities for each sample.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            List of n_features-dimensional data points. Each row
+            corresponds to a single data point.
+
+        Returns
+        -------
+        log_prob : array, shape (n_samples, n_clusters)
+            Log probabilities of each data point in X.
         """
-        This function compute the decision of the fitted HD model.
-        :param Xt: The samples matrix of testing samples
-        :type xt: float
-        :return K: Log probabilities of each data point in Xt
-        """
-        nt, d = Xt.shape
+        nt, d = X.shape
         K = sp.empty((nt, self.C))
 
         # Start the prediction for each class
@@ -353,21 +417,32 @@ class HDDC():
             K[:, c] = self.logdet[c] - 2*sp.log(self.prop[c]) + self.cst
 
             # Remove the mean
-            Xtc = Xt - self.mean[c]
+            Xc = X - self.mean[c]
 
             # Do the projection
-            Px = sp.dot(Xtc,
+            Px = sp.dot(Xc,
                         sp.dot(self.Q[c], self.Q[c].T))
             temp = sp.dot(Px, self.Q[c]/sp.sqrt(self.a[c]))
             K[:, c] += sp.sum(temp**2, axis=1)
-            K[:, c] += sp.sum((Xtc - Px)**2, axis=1)/self.b[c]
+            K[:, c] += sp.sum((Xc - Px)**2, axis=1)/self.b[c]
 
         return K
 
-    def predict(self, Xt):
+    def predict(self, X):
         """Predict the labels for the data samples in X using trained model.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            List of n_features-dimensional data points. Each row
+            corresponds to a single data point.
+
+        Returns
+        -------
+        labels : array, shape (n_samples,)
+            Component labels.
         """
-        return self.score_samples(Xt).argmin(axis=1) + 1
+        return self.score_samples(X).argmin(axis=1) + 1
 
     def free(self, full=False):
         """This  function free some  parameters of the  model. It is  used to
