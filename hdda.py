@@ -3,11 +3,10 @@ import scipy as sp
 from scipy import linalg
 from sklearn.cluster import KMeans
 from scipy.linalg.blas import dsyrk
+from sklearn.utils.validation import check_array
 
-# TODO: Add check_array function for fit and predict function (in particular score=bic)
-# TODO: Change name of functions to match "APIs of scikit-learn objects"
 # TODO: Define get_param and set_param function
-# TODO: update score, score_samples and predict to match scikit
+# TODO: Check the projection in predict -> could be faster ...
 
 # Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -95,6 +94,8 @@ class HDDC():
         LL = []
         ITER = 0
 
+        X = check_array(X, copy=False, order='C', dtype=sp.float64)
+
         # Set minimum clusters size
         # Rule of dumbs for minimal size pi = 1 :
         # one mean vector (d) + one eigenvalues/vectors (1 + d)
@@ -151,7 +152,7 @@ class HDDC():
         self.LL = LL
         self.bic = - 2*LL[-1] + self.q*sp.log(n)
         self.aic = - 2*LL[-1] + 2*self.q
-        # Add small constant to prevent numerical issues
+        # Add small constant to ICL to prevent numerical issues
         self.icl = self.bic - 2*sp.log(self.T.max(axis=1)+EPS).sum()
         self.niter = ITER + 1
 
@@ -344,7 +345,7 @@ class HDDC():
         K = self.score_samples(X)
 
         # Compute the Loglikelhood
-        K *= (-0.5)
+        K *= (0.5)
         Km = K.max(axis=1)
         Km.shape = (n, 1)
 
@@ -358,7 +359,7 @@ class HDDC():
 
         return LL
 
-    def score(self, X):
+    def score(self, X, y=None):
         """Compute the per-sample log-likelihood of the given data X.
 
         Parameters
@@ -372,6 +373,8 @@ class HDDC():
             Log likelihood of the Gaussian mixture given X.
 
         """
+        
+        X = check_array(X, copy=False, order='C', dtype=sp.float64)
 
         # Get some parameters
         n = X.shape[0]
@@ -380,7 +383,7 @@ class HDDC():
         K = self.score_samples(X)
 
         # Compute the Loglikelhood
-        K *= (-0.5)
+        K *= (0.5)
         Km = K.max(axis=1)
         Km.shape = (n, 1)
         # logsumexp trick
@@ -388,7 +391,7 @@ class HDDC():
 
         return LL
 
-    def score_samples(self, X):
+    def score_samples(self, X, y=None):
         """Compute the negative weighted log probabilities for each sample.
 
         Parameters
@@ -402,6 +405,7 @@ class HDDC():
         log_prob : array, shape (n_samples, n_clusters)
             Log probabilities of each data point in X.
         """
+        X = check_array(X, copy=False, order='C', dtype=sp.float64)
         nt, d = X.shape
         K = sp.empty((nt, self.C))
 
@@ -420,7 +424,7 @@ class HDDC():
             K[:, c] += sp.sum(temp**2, axis=1)
             K[:, c] += sp.sum((Xc - Px)**2, axis=1)/self.b[c]
 
-        return K
+        return -K
 
     def predict(self, X):
         """Predict the labels for the data samples in X using trained model.
@@ -436,7 +440,8 @@ class HDDC():
         labels : array, shape (n_samples,)
             Component labels.
         """
-        return self.score_samples(X).argmin(axis=1) + 1
+        X = check_array(X, copy=False, order='C', dtype=sp.float64)
+        return self.score_samples(X).argmax(axis=1) + 1
 
     def free(self):
         """This  function free some  parameters of the  model.
