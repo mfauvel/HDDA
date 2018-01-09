@@ -211,10 +211,10 @@ class HDDC():
 
                 # Only the upper part of cov is initialize -> dsyrk
                 L, Q = linalg.eigh(cov, lower=False)
-                idx = L.argsort()[::-1]
-                L, Q = L[idx], Q[:, idx]
                 # Chek for numerical errors
                 L[L < EPS] = EPS
+                idx = L.argsort()[::-1]
+                L, Q = L[idx], Q[:, idx]
 
                 self.L.append(L)
                 self.Q.append(Q)
