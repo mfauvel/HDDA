@@ -7,6 +7,7 @@ from sklearn.utils.validation import check_array
 
 # TODO: Define get_param and set_param function
 # TODO: Check the projection in predict -> could be faster ...
+# TODO: add predict_proba function
 
 # Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -44,6 +45,8 @@ class HDDC():
         - m12 = abQid
         """
         # Hyperparameters of the algorithm
+        self.n = None
+        self.d = None
         self.th = th
         self.init = init
         self.itermax = itermax
@@ -90,22 +93,34 @@ class HDDC():
         -------
         self
         """
+
+        # Initialization
         n, d = X.shape
+        self.n = n
+        self.d = d
         LL = []
         ITER = 0
 
         X = check_array(X, copy=False, order='C', dtype=sp.float64)
+
+        # Compute constant
+        self.cst = self.d*sp.log(2*sp.pi)
 
         # Set minimum clusters size
         # Rule of dumbs for minimal size pi = 1 :
         # one mean vector (d) + one eigenvalues/vectors (1 + d)
         # + noise term (1) ~ 2(d+1)
         if self.population is None:
-            self.population = 2*(d+1)
+            self.population = 2*(self.d+1)
+
+        if self.population > self.n/self.C:
+            print("Number of classes to high w.r.t the number of samples:"
+                  "C should be deacreased")
+            return - 2
 
         # Initialization of the clustering
         if self.C == 1:
-            self.T = sp.ones((n, 1))
+            self.T = sp.ones((self.n, 1))
         else:
             if self.init == 'kmeans':
                 label = KMeans(n_clusters=self.C,
@@ -117,15 +132,16 @@ class HDDC():
                 label = sp.random.randint(1, high=self.C+1, size=n)
             elif self.init == 'user':
                 if self.C != y.max():
-                    print("The number of class does not match between self.C and y")                
+                    print("The number of class does not"
+                          "match between self.C and y")
                 label = y
             else:
                 print("Initialization should be kmeans or random or user")
                 return - 2  # Bad init values
 
             # Convert label to membership
-            self.T = sp.zeros((n, self.C))
-            self.T[sp.arange(n), label-1] = 1
+            self.T = sp.zeros((self.n, self.C))
+            self.T[sp.arange(self.n), label-1] = 1
 
         # Initialization of the parameter
         self.m_step(X)
@@ -150,12 +166,16 @@ class HDDC():
 
         # Return the class membership and some parameters of the optimization
         self.LL = LL
-        self.bic = - 2*LL[-1] + self.q*sp.log(n)
+        self.bic = - 2*LL[-1] + self.q*sp.log(self.n)
         self.aic = - 2*LL[-1] + 2*self.q
         # Add small constant to ICL to prevent numerical issues
         self.icl = self.bic - 2*sp.log(self.T.max(axis=1)+EPS).sum()
         self.niter = ITER + 1
 
+        # Remove temporary variables
+        self.T = None
+        self.W = None
+        self.X = None
         return self
 
     def m_step(self, X):
@@ -167,22 +187,16 @@ class HDDC():
 
         """
 
-        # Get information from the data
-        n, d = X.shape    # Number of samples and number of variables
-
-        # Compute constant
-        self.cst = d*sp.log(2*sp.pi)
-
         # Compute the whole covariance matrix
         if self.model in ('M2', 'M4', 'M6', 'M8'):
             X_ = (X - sp.mean(X, axis=0))
             # Use dsyrk to take benefit of the product symmetric matrices
             # X^{t}X or XX^{t}
             # Transpose to put in fortran order
-            if n >= d:
-                self.W = dsyrk(1.0/n, X_.T, trans=False)
+            if self.n >= self.d:
+                self.W = dsyrk(1.0/self.n, X_.T, trans=False)
             else:
-                self.W = dsyrk(1.0/n, X_.T, trans=True)
+                self.W = dsyrk(1.0/self.n, X_.T, trans=True)
             X_ = None
 
         # Learn the model for each class
@@ -197,12 +211,12 @@ class HDDC():
                 c_delete.append(c)
             else:
                 self.ni.append(ni)
-                self.prop.append(float(self.ni[-1])/n)
+                self.prop.append(float(self.ni[-1])/self.n)
                 self.mean.append(sp.dot(self.T[:, c].T, X)/self.ni[-1])
                 X_ = (X-self.mean[-1])*(sp.sqrt(self.T[:, c])[:, sp.newaxis])
 
                 # Use dsyrk to take benefit of symmetric matrices
-                if n >= d:
+                if self.n >= self.d:
                     cov = dsyrk(1.0/(self.ni[-1]-1), X_.T, trans=False)
                 else:
                     cov = dsyrk(1.0/(self.ni[-1]-1), X_.T, trans=True)
@@ -211,14 +225,26 @@ class HDDC():
 
                 # Only the upper part of cov is initialize -> dsyrk
                 L, Q = linalg.eigh(cov, lower=False)
+
                 # Chek for numerical errors
                 L[L < EPS] = EPS
-                idx = L.argsort()[::-1]
-                L, Q = L[idx], Q[:, idx]
+                if self.check_empty and (L.max() - L.min()) < EPS:
+                    # In that case all eigenvalues are equal
+                    # and this does not match the model
+                    C_ -= 1
+                    c_delete.append(c)
+                    del self.ni[-1]
+                    del self.prop[-1]
+                    del self.mean[-1]
+                    if self.n < self.d:
+                        del self.X[-1]
+                else:
+                    idx = L.argsort()[::-1]
+                    L, Q = L[idx], Q[:, idx]
 
-                self.L.append(L)
-                self.Q.append(Q)
-                self.trace.append(cov.trace())
+                    self.L.append(L)
+                    self.Q.append(Q)
+                    self.trace.append(cov.trace())
 
         # Update T
         if c_delete:
@@ -242,7 +268,7 @@ class HDDC():
             dL /= dL.max()
             while sp.any(dL[p:] > self.th):
                 p += 1
-            min_dim = int(min(min(self.ni), d))
+            min_dim = int(min(min(self.ni), self.d))
             # Check if (p >= ni-1 or d-1) and p > 0
             if p < (min_dim - 1):
                 self.pi = [p for c in xrange(self.C)]
@@ -257,7 +283,7 @@ class HDDC():
                 dL /= dL.max()
                 while sp.any(dL[pi:] > self.th):
                     pi += 1
-                if (pi < (min(self.ni[c], d) - 1)) and (pi > 0):
+                if (pi < (min(self.ni[c], self.d) - 1)) and (pi > 0):
                     self.pi.append(pi)
                 else:
                     self.pi.append(1)
@@ -270,16 +296,16 @@ class HDDC():
         # Estim noise term
         if self.model in ('M1', 'M2', 'M5', 'M6'):
             # Noise free
-            self.b = [(sT-sA.sum())/(d-sPI)
+            self.b = [(sT-sA.sum())/(self.d-sPI)
                       for sT, sA, sPI in zip(self.trace, self.a, self.pi)]
             # Check for very small value of b
             self.b = [b if b > EPS else EPS for b in self.b]
 
         elif self.model in ('M3', 'M4', 'M7', 'M8'):
             # Noise common
-            denom = d - sp.sum([sPR*sPI
-                                for sPR, sPI in
-                                zip(self.prop, self.pi)])
+            denom = self.d - sp.sum([sPR*sPI
+                                     for sPR, sPI in
+                                     zip(self.prop, self.pi)])
             num = sp.sum([sPR*(sT-sA.sum())
                           for sPR, sT, sA in
                           zip(self.prop, self.trace, self.a)])
@@ -294,12 +320,12 @@ class HDDC():
 
         # Compute remainings parameters
         # Precompute logdet
-        self.logdet = [(sp.log(sA).sum() + (d-sPI)*sp.log(sB))
+        self.logdet = [(sp.log(sA).sum() + (self.d-sPI)*sp.log(sB))
                        for sA, sPI, sB in
                        zip(self.a, self.pi, self.b)]
 
         # Update the Q matrices
-        if n >= d:
+        if self.n >= self.d:
             self.Q = [sQ[:, :sPI]
                       for sQ, sPI in
                       zip(self.Q, self.pi)]
@@ -309,8 +335,8 @@ class HDDC():
                       zip(self.X, self.Q, self.pi, self.L)]
 
         # Compute the number of parameters of the model
-        self.q = self.C*d + (self.C-1) + sum([sPI*(d-(sPI+1)/2)
-                                              for sPI in self.pi])
+        self.q = self.C*self.d + (self.C-1) + sum([sPI*(self.d-(sPI+1)/2)
+                                                   for sPI in self.pi])
         # Number of noise subspaces
         if self.model in ('M1', 'M3', 'M5', 'M7'):
             self.q += self.C
@@ -373,7 +399,7 @@ class HDDC():
             Log likelihood of the Gaussian mixture given X.
 
         """
-        
+
         X = check_array(X, copy=False, order='C', dtype=sp.float64)
 
         # Get some parameters
