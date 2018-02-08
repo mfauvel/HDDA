@@ -4,7 +4,7 @@ from scipy import linalg
 from sklearn.cluster import KMeans
 from scipy.linalg.blas import dsyrk
 from sklearn.utils.validation import check_array
-
+from mpi4py import MPI
 # TODO: Define get_param and set_param function
 # TODO: Check the projection in predict -> could be faster ...
 # TODO: add predict_proba function
@@ -13,6 +13,9 @@ from sklearn.utils.validation import check_array
 EPS = sp.finfo(sp.float64).eps
 MIN = sp.finfo(sp.float64).min
 
+# MPI initialization
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 # HDDC
 class HDDC():
@@ -23,7 +26,7 @@ class HDDC():
     https://doi.org/10.1016/j.csda.2007.02.009
     """
 
-    def __init__(self, model='M1', th=0.1, init='kmeans',
+    def __init__(self, model='M1', th=0.1, init='random',
                  itermax=100, tol=0.001, C=4,
                  population=None, random_state=None,
                  check_empty=None):
@@ -56,6 +59,7 @@ class HDDC():
         self.random_state = random_state
         self.check_empty = check_empty  # Check for empty classes
         self.C_ = [C]  # List of clusters number w.r.t iterations
+        self.Xm = None  # Sample mean
 
         self.ni = []  # Number of samples of each class
         self.prop = []  # Proportion of each class
@@ -95,7 +99,10 @@ class HDDC():
         """
 
         # Initialization
-        n, d = X.shape
+        np, d = X.shape
+        np = sp.array(np)
+        n = sp.empty_like(np)
+        comm.Allreduce(np, n, op=MPI.SUM)
         self.n = n
         self.d = d
         LL = []
@@ -143,6 +150,21 @@ class HDDC():
             self.T = sp.zeros((self.n, self.C))
             self.T[sp.arange(self.n), label-1] = 1
 
+        # Pre compute the whole covariance matrix # TO DO
+        if self.model in ('M2', 'M4', 'M6', 'M8'):
+            X_ = (X - sp.mean(X, axis=0))
+            # Use dsyrk to take benefit of the product symmetric matrices
+            # X^{t}X or XX^{t}
+            # Transpose to put in fortran order
+            if self.n >= self.d:
+                W = dsyrk(1.0/self.n, X_.T, trans=False)
+            else:
+                W = dsyrk(1.0/self.n, X_.T, trans=True)
+            self.W = sp.empty_like(W)
+            comm.Allreduce(W, self.W, op=MPI.SUM)
+            del W
+            del X_
+
         # Initialization of the parameter
         self.m_step(X)
         ll = self.e_step(X)
@@ -186,18 +208,6 @@ class HDDC():
         class.
 
         """
-
-        # Compute the whole covariance matrix
-        if self.model in ('M2', 'M4', 'M6', 'M8'):
-            X_ = (X - sp.mean(X, axis=0))
-            # Use dsyrk to take benefit of the product symmetric matrices
-            # X^{t}X or XX^{t}
-            # Transpose to put in fortran order
-            if self.n >= self.d:
-                self.W = dsyrk(1.0/self.n, X_.T, trans=False)
-            else:
-                self.W = dsyrk(1.0/self.n, X_.T, trans=True)
-            X_ = None
 
         # Learn the model for each class
         C_ = self.C
