@@ -78,7 +78,7 @@ class HDDC():
         self.icl = []         # icl values of the model
         self.niter = None     # Number of iterations
         self.X = []           # Matrix to project samples when n<d
-        self.W = []           # Common covariance matrix
+        self.dL = []          # Common covariance matrix eigenvalues
         self.T = []           # Membership matrix
 
     def fit(self, X, y=None):
@@ -143,6 +143,28 @@ class HDDC():
             self.T = sp.zeros((self.n, self.C))
             self.T[sp.arange(self.n), label-1] = 1
 
+        # Compute the whole covariance matrix and its eigenvalues if needed
+        if self.model in ('M2', 'M4', 'M6', 'M8'):
+            X_ = (X - sp.mean(X, axis=0))
+            # Use dsyrk to take benefit of the product symmetric matrices
+            # X^{t}X or XX^{t}
+            # Transpose to put in fortran order
+            if self.n >= self.d:
+                W = dsyrk(1.0/self.n, X_.T, trans=False)
+            else:
+                W = dsyrk(1.0/self.n, X_.T, trans=True)
+            del X_
+
+            # Compute intrinsic dimension on the whole data set
+            L = linalg.eigh(W, eigvals_only=True, lower=False)
+            idx = L.argsort()[::-1]
+            L = L[idx]
+            # Chek for numerical errors
+            L[L < EPS] = EPS
+            self.dL = sp.absolute(sp.diff(L))
+            self.dL /= self.dL.max()
+            del W, L
+
         # Initialization of the parameter
         self.m_step(X)
         ll = self.e_step(X)
@@ -174,7 +196,6 @@ class HDDC():
 
         # Remove temporary variables
         self.T = None
-        self.W = None
         self.X = None
         return self
 
@@ -186,19 +207,6 @@ class HDDC():
         class.
 
         """
-
-        # Compute the whole covariance matrix
-        if self.model in ('M2', 'M4', 'M6', 'M8'):
-            X_ = (X - sp.mean(X, axis=0))
-            # Use dsyrk to take benefit of the product symmetric matrices
-            # X^{t}X or XX^{t}
-            # Transpose to put in fortran order
-            if self.n >= self.d:
-                self.W = dsyrk(1.0/self.n, X_.T, trans=False)
-            else:
-                self.W = dsyrk(1.0/self.n, X_.T, trans=True)
-            X_ = None
-
         # Learn the model for each class
         C_ = self.C
         c_delete = []
@@ -254,29 +262,8 @@ class HDDC():
         self.C_.append(C_)
         self.C = C_
 
-        # Estimation of the signal subspace
-        # Common size subspace models
-        if self.model in ('M2', 'M4', 'M6', 'M8'):
-            # Compute intrinsic dimension on the whole data set
-            L = linalg.eigh(self.W, eigvals_only=True, lower=False)
-            idx = L.argsort()[::-1]
-            L = L[idx]
-            # Chek for numerical errors
-            L[L < EPS] = EPS
-            # To take into account python broadcasting a[:p] = a[0]...a[p-1]
-            dL, p = sp.absolute(sp.diff(L)), 1
-            dL /= dL.max()
-            while sp.any(dL[p:] > self.th):
-                p += 1
-            min_dim = int(min(min(self.ni), self.d))
-            # Check if (p >= ni-1 or d-1) and p > 0
-            if p < (min_dim - 1):
-                self.pi = [p for c in xrange(self.C)]
-            else:
-                self.pi = [max((min_dim-2), 1) for c in xrange(self.C)]
-
-        # Specific size subspace models
-        elif self.model in ('M1', 'M3', 'M5', 'M7'):
+        # Estimation of the signal subspace for specific size subspace models
+        if self.model in ('M1', 'M3', 'M5', 'M7'):
             for c in xrange(self.C):
                 # Scree test
                 dL, pi = sp.absolute(sp.diff(self.L[c])), 1
@@ -287,6 +274,17 @@ class HDDC():
                     self.pi.append(pi)
                 else:
                     self.pi.append(1)
+        elif self.model in ('M2', 'M4', 'M6', 'M8'):
+            dL, p = self.dL, 1
+            while sp.any(dL[p:] > self.th):
+                p += 1
+            min_dim = int(min(min(self.ni), self.d))
+            # Check if (p >= ni-1 or d-1) and p > 0
+            if p < (min_dim - 1):
+                self.pi = [p for c in xrange(self.C)]
+            else:
+                self.pi = [max((min_dim-2), 1) for c in xrange(self.C)]
+            del dL, p, idx
 
         # Estim signal part
         self.a = [sL[:sPI] for sL, sPI in zip(self.L, self.pi)]
@@ -412,7 +410,8 @@ class HDDC():
         K *= (0.5)
         Km = K.max(axis=1)
         Km.shape = (n, 1)
-        # logsumexp trick
+
+        # Logsumexp trick
         LL = (sp.log(sp.exp(K-Km).sum(axis=1))[:, sp.newaxis]+Km).sum()
 
         return LL
@@ -488,4 +487,3 @@ class HDDC():
         self.Q = []
         self.trace = []
         self.X = []
-        self.W = None
