@@ -6,8 +6,8 @@ from sklearn import mixture
 
 # Parameters for HDDA
 MODEL = 'M2'
-C = 4 # For the example with do not fit the number of classes
-th = 0.05 # The threshold for the Cattel test
+C = 4  # For the example with do not fit the number of classes
+th = 0.01  # The threshold for the Cattel test
 
 data = sp.load('crabs.npz')
 X = data['x']
@@ -16,12 +16,12 @@ Y = data['y']
 plt.figure()
 pca = PCA(n_components=2)
 Xp = pca.fit_transform(X)
-plt.scatter(Xp[:,0],Xp[:,1],c=Y,s=40)
+plt.scatter(Xp[:, 0], Xp[:, 1], c=Y, s=40)
 plt.savefig('2D_true_labels.png')
 
 bic, icl = [], []
 for model_ in ['M1', 'M2', 'M3', 'M4', 'M5']:
-    model = hdda.HDDC(C=C,th=th,model=model_)
+    model = hdda.HDDC(C=C, th=th, model=model_, init='random')
     model.fit(X)
     bic.append(model.bic)
     icl.append(model.icl)
