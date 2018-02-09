@@ -13,9 +13,10 @@ from mpi4py import MPI
 EPS = sp.finfo(sp.float64).eps
 MIN = sp.finfo(sp.float64).min
 
-# MPI initialization
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
+# # MPI initialization
+# comm = MPI.COMM_WORLD
+# rank = comm.Get_rank()
+
 
 # HDDC
 class HDDC():
@@ -26,10 +27,11 @@ class HDDC():
     https://doi.org/10.1016/j.csda.2007.02.009
     """
 
-    def __init__(self, model='M1', th=0.1, init='random',
+    def __init__(self, comm, rank,
+                 model='M1', th=0.1, init='random',
                  itermax=100, tol=0.001, C=4,
-                 population=None, random_state=None,
-                 check_empty=None):
+                 population=None, random_state=0,
+                 check_empty=False):
         """
         This function initialize the HDDA stucture
         :param model: the model used.
@@ -81,9 +83,11 @@ class HDDC():
         self.aic = []         # aic values of the model
         self.icl = []         # icl values of the model
         self.niter = None     # Number of iterations
-        self.X = []           # Matrix to project samples when n<d
-        self.W = []           # Common covariance matrix
+        self.dL = []          # Common covariance matrix eigenvalues
         self.T = []           # Membership matrix
+
+        self.comm = comm
+        self.rank = rank
 
     def fit(self, X, y=None):
         """Estimate the model parameters with the EM algorithm
@@ -102,7 +106,7 @@ class HDDC():
         np, d = X.shape
         np = sp.array(np)
         n = sp.empty_like(np)
-        comm.Allreduce(np, n, op=MPI.SUM)
+        self.comm.Allreduce(np, n, op=MPI.SUM)
         self.n = n
         self.d = d
         LL = []
@@ -127,7 +131,7 @@ class HDDC():
 
         # Initialization of the clustering
         if self.C == 1:
-            self.T = sp.ones((self.n, 1))
+            self.T = sp.ones((np, 1))
         else:
             if self.init == 'kmeans':
                 label = KMeans(n_clusters=self.C,
@@ -136,7 +140,7 @@ class HDDC():
                 label += 1  # Label starts at one
             elif self.init == 'random':
                 sp.random.seed(self.random_state)
-                label = sp.random.randint(1, high=self.C+1, size=n)
+                label = sp.random.randint(1, high=self.C+1, size=np)
             elif self.init == 'user':
                 if self.C != y.max():
                     print("The number of class does not"
@@ -147,28 +151,43 @@ class HDDC():
                 return - 2  # Bad init values
 
             # Convert label to membership
-            self.T = sp.zeros((self.n, self.C))
-            self.T[sp.arange(self.n), label-1] = 1
+            self.T = sp.zeros((np, self.C))
+            self.T[sp.arange(np), label-1] = 1
 
-        # Pre compute the whole covariance matrix # TO DO
+        # Compute the whole covariance matrix and its eigenvalues if needed
         if self.model in ('M2', 'M4', 'M6', 'M8'):
-            X_ = (X - sp.mean(X, axis=0))
+            Xmp = sp.sum(X, axis=0)
+            Xm = sp.empty_like(Xmp)
+            self.comm.Allreduce(Xmp, Xm, op=MPI.SUM)  # Collective summation
+            Xm /= self.n  # Global mean
+            X_ = (X - Xm)
             # Use dsyrk to take benefit of the product symmetric matrices
             # X^{t}X or XX^{t}
             # Transpose to put in fortran order
-            if self.n >= self.d:
-                W = dsyrk(1.0/self.n, X_.T, trans=False)
+            Wp = dsyrk(1.0/self.n, X_.T, trans=False)
+            W = sp.empty_like(Wp)
+            self.comm.Allreduce(Wp, W, op=MPI.SUM)
+            del Wp, Xmp
+            if self.rank == 0:
+                # Compute intrinsic dimension on the whole data set
+                L = linalg.eigh(W, eigvals_only=True, lower=False)
+                idx = L.argsort()[::-1]
+                L = L[idx]
+                # Chek for numerical errors
+                L[L < EPS] = EPS
+                self.dL = sp.absolute(sp.diff(L))
+                self.dL /= self.dL.max()
+                del W, L
             else:
-                W = dsyrk(1.0/self.n, X_.T, trans=True)
-            self.W = sp.empty_like(W)
-            comm.Allreduce(W, self.W, op=MPI.SUM)
-            del W
-            del X_
+                self.dL = sp.empty((self.d))
+            self.comm.Bcast(self.dL, root=0)
 
         # Initialization of the parameter
         self.m_step(X)
-        ll = self.e_step(X)
-        LL.append(ll)
+        llp = sp.array(self.e_step(X))
+        ll = sp.empty_like(llp)
+        self.comm.Allreduce(llp, ll, op=MPI.SUM)
+        LL.append(float(ll))
 
         # Main while loop
         while(ITER < self.itermax):
@@ -177,9 +196,11 @@ class HDDC():
             self.m_step(X)
 
             # E step
-            ll = self.e_step(X)
+            llp = sp.array(self.e_step(X))
+            ll = sp.empty_like(llp)
+            self.comm.Allreduce(llp, ll, op=MPI.SUM)
+            LL.append(float(ll))
 
-            LL.append(ll)
             if (abs((LL[-1]-LL[-2])/LL[-2]) < self.tol) and \
                (self.C_[-2] == self.C_[-1]):
                 break
@@ -196,8 +217,6 @@ class HDDC():
 
         # Remove temporary variables
         self.T = None
-        self.W = None
-        self.X = None
         return self
 
     def m_step(self, X):
@@ -208,12 +227,13 @@ class HDDC():
         class.
 
         """
-
         # Learn the model for each class
         C_ = self.C
         c_delete = []
         for c in xrange(self.C):
-            ni = self.T[:, c].sum()
+            nip = sp.array(self.T[:, c].sum())
+            ni = sp.empty_like(nip)
+            self.comm.Allreduce(nip, ni, op=MPI.SUM)  # Global reduction for ni
             # Check if empty
             if self.check_empty and \
                ni < self.population:
@@ -222,19 +242,25 @@ class HDDC():
             else:
                 self.ni.append(ni)
                 self.prop.append(float(self.ni[-1])/self.n)
-                self.mean.append(sp.dot(self.T[:, c].T, X)/self.ni[-1])
+                Xmp = sp.dot(self.T[:, c].T, X)/self.ni[-1]
+                Xm = sp.empty_like(Xmp)
+                self.comm.Allreduce(Xmp, Xm, op=MPI.SUM)
+                self.mean.append(Xm)
                 X_ = (X-self.mean[-1])*(sp.sqrt(self.T[:, c])[:, sp.newaxis])
 
                 # Use dsyrk to take benefit of symmetric matrices
-                if self.n >= self.d:
-                    cov = dsyrk(1.0/(self.ni[-1]-1), X_.T, trans=False)
-                else:
-                    cov = dsyrk(1.0/(self.ni[-1]-1), X_.T, trans=True)
-                    self.X.append(X_)
-                X_ = None
+                covp = dsyrk(1.0/(self.ni[-1]-1), X_.T, trans=False)
+                cov = sp.empty_like(covp)
+                self.comm.Allreduce(covp, cov, op=MPI.SUM)
 
-                # Only the upper part of cov is initialize -> dsyrk
-                L, Q = linalg.eigh(cov, lower=False)
+                if self.rank == 0:
+                    # Only the upper part of cov is initialize -> dsyrk
+                    L, Q = linalg.eigh(cov, lower=False)
+                else:
+                    L = sp.empty((self.d))
+                    Q = sp.empty((self.d, self.d))
+                self.comm.Bcast(L, root=0)
+                self.comm.Bcast(Q, root=0)
 
                 # Chek for numerical errors
                 L[L < EPS] = EPS
@@ -246,8 +272,6 @@ class HDDC():
                     del self.ni[-1]
                     del self.prop[-1]
                     del self.mean[-1]
-                    if self.n < self.d:
-                        del self.X[-1]
                 else:
                     idx = L.argsort()[::-1]
                     L, Q = L[idx], Q[:, idx]
@@ -264,103 +288,98 @@ class HDDC():
         self.C_.append(C_)
         self.C = C_
 
-        # Estimation of the signal subspace
-        # Common size subspace models
-        if self.model in ('M2', 'M4', 'M6', 'M8'):
-            # Compute intrinsic dimension on the whole data set
-            L = linalg.eigh(self.W, eigvals_only=True, lower=False)
-            idx = L.argsort()[::-1]
-            L = L[idx]
-            # Chek for numerical errors
-            L[L < EPS] = EPS
-            # To take into account python broadcasting a[:p] = a[0]...a[p-1]
-            dL, p = sp.absolute(sp.diff(L)), 1
-            dL /= dL.max()
-            while sp.any(dL[p:] > self.th):
-                p += 1
-            min_dim = int(min(min(self.ni), self.d))
-            # Check if (p >= ni-1 or d-1) and p > 0
-            if p < (min_dim - 1):
-                self.pi = [p for c in xrange(self.C)]
-            else:
-                self.pi = [max((min_dim-2), 1) for c in xrange(self.C)]
-
-        # Specific size subspace models
-        elif self.model in ('M1', 'M3', 'M5', 'M7'):
-            for c in xrange(self.C):
-                # Scree test
-                dL, pi = sp.absolute(sp.diff(self.L[c])), 1
-                dL /= dL.max()
-                while sp.any(dL[pi:] > self.th):
-                    pi += 1
-                if (pi < (min(self.ni[c], self.d) - 1)) and (pi > 0):
-                    self.pi.append(pi)
+        if self.rank == 0:
+            # Estimation of the signal subspace
+            # Common size subspace models for specific size subspace models
+            if self.model in ('M1', 'M3', 'M5', 'M7'):
+                for c in xrange(self.C):
+                    # Scree test
+                    dL, pi = sp.absolute(sp.diff(self.L[c])), 1
+                    dL /= dL.max()
+                    while sp.any(dL[pi:] > self.th):
+                        pi += 1
+                    if (pi < (min(self.ni[c], self.d) - 1)) and (pi > 0):
+                        self.pi.append(pi)
+                    else:
+                        self.pi.append(1)
+            elif self.model in ('M2', 'M4', 'M6', 'M8'):
+                dL, p = self.dL, 1
+                while sp.any(dL[p:] > self.th):
+                    p += 1
+                min_dim = int(min(min(self.ni), self.d))
+                # Check if (p >= ni-1 or d-1) and p > 0
+                if p < (min_dim - 1):
+                    self.pi = [p for c in xrange(self.C)]
                 else:
-                    self.pi.append(1)
+                    self.pi = [max((min_dim-2), 1) for c in xrange(self.C)]
+                del dL, p, idx
 
-        # Estim signal part
-        self.a = [sL[:sPI] for sL, sPI in zip(self.L, self.pi)]
-        if self.model in ('M5', 'M6', 'M7', 'M8'):
-            self.a = [sp.repeat(sA[:].mean(), sA.size) for sA in self.a]
+            # Estim signal part
+            self.a = [sL[:sPI] for sL, sPI in zip(self.L, self.pi)]
+            if self.model in ('M5', 'M6', 'M7', 'M8'):
+                self.a = [sp.repeat(sA[:].mean(), sA.size) for sA in self.a]
 
-        # Estim noise term
-        if self.model in ('M1', 'M2', 'M5', 'M6'):
-            # Noise free
-            self.b = [(sT-sA.sum())/(self.d-sPI)
-                      for sT, sA, sPI in zip(self.trace, self.a, self.pi)]
-            # Check for very small value of b
-            self.b = [b if b > EPS else EPS for b in self.b]
+            # Estim noise term
+            if self.model in ('M1', 'M2', 'M5', 'M6'):
+                # Noise free
+                self.b = [(sT-sA.sum())/(self.d-sPI)
+                          for sT, sA, sPI in zip(self.trace, self.a, self.pi)]
+                # Check for very small value of b
+                self.b = [b if b > EPS else EPS for b in self.b]
 
-        elif self.model in ('M3', 'M4', 'M7', 'M8'):
-            # Noise common
-            denom = self.d - sp.sum([sPR*sPI
-                                     for sPR, sPI in
-                                     zip(self.prop, self.pi)])
-            num = sp.sum([sPR*(sT-sA.sum())
-                          for sPR, sT, sA in
-                          zip(self.prop, self.trace, self.a)])
+            elif self.model in ('M3', 'M4', 'M7', 'M8'):
+                # Noise common
+                denom = self.d - sp.sum([sPR*sPI
+                                         for sPR, sPI in
+                                         zip(self.prop, self.pi)])
+                num = sp.sum([sPR*(sT-sA.sum())
+                              for sPR, sT, sA in
+                              zip(self.prop, self.trace, self.a)])
 
-            # Check for very small values
-            if num < EPS:
-                self.b = [EPS for i in xrange(self.C)]
-            elif denom < EPS:
-                self.b = [1/EPS for i in xrange(self.C)]
-            else:
-                self.b = [num/denom for i in xrange(self.C)]
+                # Check for very small values
+                if num < EPS:
+                    self.b = [EPS for i in xrange(self.C)]
+                elif denom < EPS:
+                    self.b = [1/EPS for i in xrange(self.C)]
+                else:
+                    self.b = [num/denom for i in xrange(self.C)]
 
-        # Compute remainings parameters
-        # Precompute logdet
-        self.logdet = [(sp.log(sA).sum() + (self.d-sPI)*sp.log(sB))
-                       for sA, sPI, sB in
-                       zip(self.a, self.pi, self.b)]
+            # Compute remainings parameters
+            # Precompute logdet
+            self.logdet = [(sp.log(sA).sum() + (self.d-sPI)*sp.log(sB))
+                           for sA, sPI, sB in
+                           zip(self.a, self.pi, self.b)]
 
-        # Update the Q matrices
-        if self.n >= self.d:
+            # Update the Q matrices
             self.Q = [sQ[:, :sPI]
                       for sQ, sPI in
                       zip(self.Q, self.pi)]
-        else:
-            self.Q = [sp.dot(sX.T, sQ[:, :sPI])/sp.sqrt(sL[:sPI])
-                      for sX, sQ, sPI, sL in
-                      zip(self.X, self.Q, self.pi, self.L)]
 
-        # Compute the number of parameters of the model
-        self.q = self.C*self.d + (self.C-1) + sum([sPI*(self.d-(sPI+1)/2)
-                                                   for sPI in self.pi])
-        # Number of noise subspaces
-        if self.model in ('M1', 'M3', 'M5', 'M7'):
-            self.q += self.C
-        elif self.model in ('M2', 'M4', 'M6', 'M8'):
-            self.q += 1
-        # Size of signal subspaces
-        if self.model in ('M1', 'M2'):
-            self.q += sum(self.pi) + self.C
-        elif self.model in ('M3', 'M4'):
-            self.q += sum(self.pi) + 1
-        elif self.model in ('M5', 'M6'):
-            self.q += 2*self.C
-        elif self.model in ('M7', 'M8'):
-            self.q += self.C+1
+            # Compute the number of parameters of the model
+            self.q = self.C*self.d + (self.C-1) + sum([sPI*(self.d-(sPI+1)/2)
+                                                       for sPI in self.pi])
+            # Number of noise subspaces
+            if self.model in ('M1', 'M3', 'M5', 'M7'):
+                self.q += self.C
+            elif self.model in ('M2', 'M4', 'M6', 'M8'):
+                self.q += 1
+            # Size of signal subspaces
+            if self.model in ('M1', 'M2'):
+                self.q += sum(self.pi) + self.C
+            elif self.model in ('M3', 'M4'):
+                self.q += sum(self.pi) + 1
+            elif self.model in ('M5', 'M6'):
+                self.q += 2*self.C
+            elif self.model in ('M7', 'M8'):
+                self.q += self.C+1
+
+        # Broadcast value
+        self.pi = self.comm.bcast(self.pi, root=0)
+        self.a = self.comm.bcast(self.a, root=0)
+        self.b = self.comm.bcast(self.b, root=0)
+        self.logdet = self.comm.bcast(self.logdet, root=0)
+        self.Q = self.comm.bcast(self.Q, root=0)
+        self.q = self.comm.bcast(self.q, root=0)
 
     def e_step(self, X):
         """Compute the e-step of the algorithm
@@ -444,7 +463,6 @@ class HDDC():
         X = check_array(X, copy=False, order='C', dtype=sp.float64)
         nt, d = X.shape
         K = sp.empty((nt, self.C))
-
         # Start the prediction for each class
         for c in xrange(self.C):
             # Compute the constant term
@@ -497,5 +515,3 @@ class HDDC():
         self.L = []           # Eigenvalues of covariance matrices
         self.Q = []
         self.trace = []
-        self.X = []
-        self.W = None
