@@ -468,6 +468,35 @@ class HDDC():
         X = check_array(X, copy=False, order='C', dtype=sp.float64)
         return self.score_samples(X).argmax(axis=1) + 1
 
+    def predict_proba(self, X):
+        """
+        Predict the membership probabilities for the data samples
+        in X using trained model.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            List of n_features-dimensional data points. Each row
+            corresponds to a single data point.
+
+        Returns
+        -------
+        proba : array, shape (n_samples, n_clusters)
+        """
+        X = check_array(X, copy=False, order='C', dtype=sp.float64)
+        K = self.score_samples(X)
+        T = sp.empty_like(K)
+
+        # Compute the Loglikelhood
+        K *= (0.5)
+
+        # Compute the posterior
+        with sp.errstate(over='ignore'):
+            for c in xrange(self.C):
+                T[:, c] = 1 / sp.exp(K-K[:, c][:, sp.newaxis]).sum(axis=1)
+
+        return T
+
     def free(self):
         """This  function free some  parameters of the  model.
 
