@@ -4,10 +4,10 @@ from scipy import linalg
 from sklearn.cluster import KMeans
 from scipy.linalg.blas import dsyrk
 from sklearn.utils.validation import check_array
+from scipy.special import softmax, logsumexp
 
 # TODO: Define get_param and set_param function
 # TODO: Check the projection in predict -> could be faster ...
-# TODO: add predict_proba function
 
 # Numerical precision - Some constant
 EPS = sp.finfo(sp.float64).eps
@@ -70,7 +70,7 @@ class HDDC():
         if model in ('M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8'):
             self.model = model  # Name of the model
         else:
-            print "Model parameter {} is not available".format(model)
+            print("Model parameter {} is not available".format(model))
             exit()
         self.q = []           # Number of parameters of the full models
         self.bic = []         # bic values of the model
@@ -370,16 +370,12 @@ class HDDC():
 
         # Compute the Loglikelhood
         K *= (0.5)
-        Km = K.max(axis=1)
-        Km.shape = (n, 1)
 
         # logsumexp trick
-        LL = (sp.log(sp.exp(K-Km).sum(axis=1))[:, sp.newaxis]+Km).sum()
+        LL = logsumexp(K, axis=1).sum()
 
         # Compute the posterior
-        with sp.errstate(over='ignore'):
-            for c in xrange(self.C):
-                self.T[:, c] = 1 / sp.exp(K-K[:, c][:, sp.newaxis]).sum(axis=1)
+        self.T = softmax(K, axis=1)
 
         return LL
 
@@ -408,11 +404,9 @@ class HDDC():
 
         # Compute the Loglikelhood
         K *= (0.5)
-        Km = K.max(axis=1)
-        Km.shape = (n, 1)
 
         # Logsumexp trick
-        LL = (sp.log(sp.exp(K-Km).sum(axis=1))[:, sp.newaxis]+Km).sum()
+        LL = logsumexp(K, axis=1).sum()
 
         return LL
 
@@ -443,11 +437,16 @@ class HDDC():
             Xc = X - self.mean[c]
 
             # Do the projection
-            Px = sp.dot(Xc,
-                        sp.dot(self.Q[c], self.Q[c].T))
-            temp = sp.dot(Px, self.Q[c]/sp.sqrt(self.a[c]))
-            K[:, c] += sp.sum(temp**2, axis=1)
-            K[:, c] += sp.sum((Xc - Px)**2, axis=1)/self.b[c]
+            K[:, c] += sp.sum(Xc**2, axis=1)/self.b[c] \
+                - sp.sum(sp.dot(Xc,
+                                self.Q[c]*sp.sqrt(1/self.b[c]-1/self.a[c]))**2,
+                         axis=1)
+
+            # Px = sp.dot(Xc,
+            #             sp.dot(self.Q[c], self.Q[c].T))
+            # temp = sp.dot(Px, self.Q[c]/sp.sqrt(self.a[c]))
+            # K[:, c] += sp.sum(temp**2, axis=1)
+            # K[:, c] += sp.sum((Xc - Px)**2, axis=1)/self.b[c]
 
         return -K
 
@@ -485,15 +484,12 @@ class HDDC():
         """
         X = check_array(X, copy=False, order='C', dtype=sp.float64)
         K = self.score_samples(X)
-        T = sp.empty_like(K)
 
         # Compute the Loglikelhood
         K *= (0.5)
 
         # Compute the posterior
-        with sp.errstate(over='ignore'):
-            for c in xrange(self.C):
-                T[:, c] = 1 / sp.exp(K-K[:, c][:, sp.newaxis]).sum(axis=1)
+        T = softmax(K, axis=1)
 
         return T
 
