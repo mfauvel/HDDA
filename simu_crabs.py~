@@ -1,0 +1,56 @@
+import hdda
+import matplotlib.pyplot as plt
+import scipy as sp
+from sklearn.decomposition import PCA
+from sklearn import mixture
+
+# Parameters for HDDA
+MODEL = ['M1','M2','M3','M4','M5','M6','M7','M8']
+th,p = sp.linspace(0.2,0.99,num=4),sp.arange(1,5,1)
+
+data = sp.load('crabs.npz')
+X = data['x']
+Y = data['y']
+
+plt.figure()
+pca = PCA(n_components=2)
+Xp = pca.fit_transform(X)
+plt.scatter(Xp[:,0],Xp[:,1],c=Y,s=40)
+plt.savefig('2D_true_labels.png')
+'2D_true_labels.png'
+
+BIC,POS = [],[]
+for model_ in MODEL:
+    bic=[]
+    for th_,p_ in zip(th,p):
+        model = hdda.HDGMM(model=model_)
+        param = {'th':th_,'p':p_,'C':4,'init':'random'}
+        yp=model.fit(X,param=param)
+        bic.append(model.bic)
+    BIC.append(sp.amin(bic))
+    POS.append(sp.argmin(bic))
+plt.figure()
+plt.plot(BIC)
+plt.savefig("bic.png")
+"bic.png"
+
+t = sp.argmin(BIC)
+best_model = MODEL[t]
+param = {'th':th[POS[t]],'p':p[POS[t]],'C':4,'init':'random'}
+model=hdda.HDGMM(model=best_model)
+yp=model.fit(X,param=param)
+
+print "Best model "+best_model
+print "With parameter " + str(th[POS[t]]) + " and " +str(p[POS[t]])
+
+plt.figure()
+plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=4)
+plt.savefig("2D_hdda.png")
+
+clf = mixture.GMM(n_components=4, covariance_type='full')
+clf.fit(X)
+yp=clf.predict(X)
+
+plt.figure()
+plt.scatter(Xp[:,0],Xp[:,1],c=yp,s=40)
+plt.savefig("2D_gmm.png")
