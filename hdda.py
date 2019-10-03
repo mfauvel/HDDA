@@ -210,7 +210,7 @@ class HDDC():
         # Learn the model for each class
         C_ = self.C
         c_delete = []
-        for c in xrange(self.C):
+        for c in range(self.C):
             ni = self.T[:, c].sum()
             # Check if empty
             if self.check_empty and \
@@ -264,7 +264,7 @@ class HDDC():
 
         # Estimation of the signal subspace for specific size subspace models
         if self.model in ('M1', 'M3', 'M5', 'M7'):
-            for c in xrange(self.C):
+            for c in range(self.C):
                 # Scree test
                 dL, pi = sp.absolute(sp.diff(self.L[c])), 1
                 dL /= dL.max()
@@ -281,9 +281,9 @@ class HDDC():
             min_dim = int(min(min(self.ni), self.d))
             # Check if (p >= ni-1 or d-1) and p > 0
             if p < (min_dim - 1):
-                self.pi = [p for c in xrange(self.C)]
+                self.pi = [p for c in range(self.C)]
             else:
-                self.pi = [max((min_dim-2), 1) for c in xrange(self.C)]
+                self.pi = [max((min_dim-2), 1) for c in range(self.C)]
             del dL, p, idx
 
         # Estim signal part
@@ -310,11 +310,11 @@ class HDDC():
 
             # Check for very small values
             if num < EPS:
-                self.b = [EPS for i in xrange(self.C)]
+                self.b = [EPS for i in range(self.C)]
             elif denom < EPS:
-                self.b = [1/EPS for i in xrange(self.C)]
+                self.b = [1/EPS for i in range(self.C)]
             else:
-                self.b = [num/denom for i in xrange(self.C)]
+                self.b = [num/denom for i in range(self.C)]
 
         # Compute remainings parameters
         # Precompute logdet
@@ -429,7 +429,7 @@ class HDDC():
         K = sp.empty((nt, self.C))
 
         # Start the prediction for each class
-        for c in xrange(self.C):
+        for c in range(self.C):
             # Compute the constant term
             K[:, c] = self.logdet[c] - 2*sp.log(self.prop[c]) + self.cst
 
